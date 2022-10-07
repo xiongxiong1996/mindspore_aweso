@@ -3,46 +3,6 @@ import mindspore.dataset.vision.py_transforms as py_vision
 from dataset.dataset import GetCUBDataset
 import mindspore.dataset as ds
 
-# Use Pytorch   set transform
-# ----------------------------------------------------------------------
-# import torch
-# from torchvision import transforms
-# normalize = transforms.Normalize(mean=[0.5, 0.5, 0.5],
-#                                  std=[0.5, 0.5, 0.5])
-#
-# normalize_v2 = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-#
-# train_transform_v1 = transforms.Compose([
-#                       transforms.RandomResizedCrop(448),
-#                       transforms.RandomHorizontalFlip(),
-#                       transforms.ToTensor(),
-#                       normalize,
-#                       ])
-#
-# train_transform_v2 = transforms.Compose([
-#                       transforms.Resize(512),
-#                       transforms.RandomCrop(448),
-#                       transforms.RandomHorizontalFlip(),
-#                       transforms.ToTensor(),
-#                       normalize,
-#                       ])
-#
-# test_transform = transforms.Compose([
-#                      transforms.Resize(512),
-#                      transforms.CenterCrop(448),
-#                      transforms.ToTensor(),
-#                      normalize
-#                      ])
-#
-# test_transform_v2 = transforms.Compose([
-#                      transforms.Resize((448, 448)),
-#                      transforms.ToTensor(),
-#                      normalize
-#                      ])
-# ----------------------------------------------------------------------
-
-# Use MindSpore    set transform
-# ----------------------------------------------------------------------
 normalize = py_vision.Normalize(mean=[0.5, 0.5, 0.5],
                                 std=[0.5, 0.5, 0.5])
 normalize_v2 = py_vision.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])

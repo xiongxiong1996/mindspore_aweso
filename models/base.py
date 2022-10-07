@@ -1,10 +1,9 @@
 import mindspore.nn as nn
 import mindspore.ops as ops
 
-from importlib import import_module
 
 from mindvision.classification import resnet50
-from mindvision.classification.models.classifiers import BaseClassifier
+
 
 
 class BaseNet(nn.Cell):

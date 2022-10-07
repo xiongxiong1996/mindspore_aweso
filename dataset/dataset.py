@@ -1,9 +1,4 @@
 import os
-
-import PIL
-import mindspore
-import mindspore.dataset.transforms.py_transforms as transforms
-import mindspore.dataset.vision.py_transforms as py_vision
 import pandas as pd
 from PIL import Image
 
