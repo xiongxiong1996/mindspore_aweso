@@ -2,20 +2,14 @@ import os
 import pandas as pd
 from PIL import Image
 
-# os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-
-# normalize = transforms.Normalize(mean=[0.5, 0.5, 0.5],
-#                                  std=[0.5, 0.5, 0.5])
-# train_transform_v2 = transforms.Compose([
-#     transforms.Resize(512),
-#     transforms.RandomCrop(448),
-#     transforms.RandomHorizontalFlip(),
-#     transforms.ToTensor(),
-#     normalize,
-# ])
-
 
 def pil_loader(path):
+    '''
+    Args:
+            path (str): Image path
+        Returns:
+            img: (image, target) where target is class_index of the target class.
+    '''
     with open(path, 'rb') as f:
         img = Image.open(f)
         return img.convert('RGB')
@@ -60,5 +54,3 @@ class GetCUBDataset:
 
     def __len__(self):
         return len(self.imgs)
-
-
