@@ -45,7 +45,7 @@ def get_loader(args, shuffle=True, train=True):
     if args.data == "CUB":
         print("load CUB dataset")
         dataset_generator = GetCUBDataset(root=args.data_root, transform=data_transform, train=train)
-        dataset = ds.GeneratorDataset(dataset_generator, ["data", "label"], shuffle=shuffle)
+        dataset = ds.GeneratorDataset(source=dataset_generator, column_names=["data", "label"], shuffle=shuffle)
     elif args.data == "AIR":
         print("load AIR dataset")
     else:
@@ -54,7 +54,10 @@ def get_loader(args, shuffle=True, train=True):
 
     # dataloader
     dataset = dataset.batch(batch_size=args.batch_size)
-    iterator = dataset.create_dict_iterator()
+
+    # iterator = dataset.create_dict_iterator()
+    # dataset = dataset.batch(batch_size=args.batch_size)
+    # iterator = dataset.create_dict_iterator()
     # print(next(iter(iterator)))
 
-    return iterator
+    return dataset
