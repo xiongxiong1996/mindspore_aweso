@@ -7,41 +7,6 @@ from mindvision.classification import resnet50, GlobalAvgPooling, ConvNormActiva
 
 from utils import l2Norm
 
-
-# class WeightNorm(nn.Cell):
-#
-#     def __init__(self, module, dim: int = 0):
-#         super().__init__()
-#
-#         if dim is None:
-#             dim = -1
-#
-#         self.dim = dim
-#         self.module = module
-#         self.assign = P.Assign()
-#         # add g and v as new parameters and express w as g/||v|| * v
-#         self.param_g = Parameter(Tensor(norm_except_dim(self.module.weight, 2, dim)))
-#         self.param_v = Parameter(Tensor(self.module.weight.data))
-#         self.module.weight.set_data(_weight_norm(self.param_v, self.param_g, self.dim))
-#         self.use_weight_norm = True
-#
-#
-#     def construct(self, *inputs, **kwargs):
-#         if not self.use_weight_norm:
-#             return self.module(*inputs, **kwargs)
-#
-#         self.assign(self.module.weight, _weight_norm(self.param_v, self.param_g, self.dim))
-#         return self.module(*inputs, **kwargs)
-#
-#
-#     def remove_weight_norm(self):
-#         self.assign(self.module.weight, _weight_norm(self.param_v, self.param_g, self.dim))
-#         self.use_weight_norm = False
-
-
-
-
-
 class BaseNet(nn.Cell):
     def __init__(self, args):
         super(BaseNet, self).__init__()
@@ -73,7 +38,7 @@ class BaseNet(nn.Cell):
 
         # 获取max_logits
         mx0 = stop_gradient(x1) # 阻止梯度回传
-        mx1 = self.amp1(mx0)
+        mx1 = self.aap1(mx0)  # amp必须是Int64???
         mx1 = mx1.squeeze()
         logits_max = self.cls_max(mx1)
 

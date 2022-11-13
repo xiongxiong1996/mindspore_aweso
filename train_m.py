@@ -6,7 +6,6 @@
 import argparse
 import os
 import time
-
 import mindspore as ms
 from mindspore import nn, Model, LossMonitor, TimeMonitor, ops, PYNATIVE_MODE
 from mindspore.ops import reshape
@@ -18,11 +17,11 @@ from mindvision.classification  import resnet50
 
 # 设置参数--------------------------------------------------------------------
 parser = argparse.ArgumentParser('MindSpore_Awesome', add_help=False)
-parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
+parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
-parser.add_argument('-b', '--batch_size', default=2, type=int, metavar='N', help='mini-batch size (default: 64)')
+parser.add_argument('-b', '--batch_size', default=32, type=int, metavar='N', help='mini-batch size (default: 64)')
 parser.add_argument('--resume', default='', type=str, metavar='path', help='path to latest checkpoint (default: none)')
-parser.add_argument('--epochs', default=30, type=int, metavar='N', help='number of total epochs to run')
+parser.add_argument('--epochs', default=50, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--lr', '--learning-rate', default=2e-4, type=float, metavar='LR', help='initial learning rate')
 parser.add_argument('--data', default='CUB', type=str, help='choice database')
 parser.add_argument('--arch', default='resnet50', type=str, help='arch default:resnet50')
@@ -30,7 +29,7 @@ parser.add_argument('--arch', default='resnet50', type=str, help='arch default:r
 # 设置参数--------------------------------------------------------------------
 ms.set_context(device_id=0)
 # config_ck = ms.CheckpointConfig(save_checkpoint_steps=32, keep_checkpoint_max=10)
-ms.set_context(mode=PYNATIVE_MODE)
+# ms.set_context(mode=PYNATIVE_MODE)
 # 设置dataset固定参数--------------------------------------------------------------------
 data_config = {"AIR": [100, "../Data/fgvc-aircraft-2013b"],
                "CAR": [196, "../Data/stanford_cars"],
@@ -43,7 +42,7 @@ data_config = {"AIR": [100, "../Data/fgvc-aircraft-2013b"],
 def main():
     global args  # 定义全局变量args
     args = parser.parse_args()
-    # args.resume = './2022-11-08-14_CUB_16_0.0002/model.ckpt'
+    args.resume = './2022-11-09-03_CUB_16_0.0002/model.ckpt'
     # 判断是哪个数据集，并选择参数，待优化---------------------------
     if args.data == "CUB":
         print("load CUB config")
@@ -79,8 +78,8 @@ def main():
     def train_loop(model, dataset, loss_fn, optimizer):
         # Define forward function
         def forward_fn(data, label):
-            logits = model(data)
-            loss = loss_fn(logits, label)
+            logits, logits_max, logits_cat = model(data)
+            loss = loss_fn(logits, label)+loss_fn(logits_max, label)+loss_fn(logits_cat, label)
             return loss, logits
 
         # Get gradient function
@@ -113,10 +112,16 @@ def main():
         for data, label in dataset.create_tuple_iterator():
             data = data.squeeze()
             label = label.astype('int32')
-            pred = model(data)
+            # pred = model(data)
+            logits, logits_max, logits_cat = model(data)
+
             total += len(data)
-            test_loss += loss_fn(pred, label).asnumpy()
-            correct += (pred.argmax(1) == label).asnumpy().sum()
+
+            # test_loss += loss_fn(pred, label).asnumpy()
+            # correct += (pred.argmax(1) == label).asnumpy().sum()
+            test_loss += (loss_fn(logits, label) + loss_fn(logits_max, label) + loss_fn(logits_cat, label)).asnumpy()
+            pre = logits + logits_max + logits_cat
+            correct += (pre.argmax(1) == label).asnumpy().sum()
         test_loss /= num_batches
         correct /= total
         test_str = (f"Test: \n Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
