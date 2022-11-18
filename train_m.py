@@ -116,30 +116,60 @@ def main():
             loss = ops.depend(loss, optimizer(grads))
             return loss, logits
 
+        def train_box_step(data, label):
+            '''
+            训练单步，进行优化
+            @param data: 输入数据
+            @param label: 真实标签
+            @return: loss
+            '''
+            (loss, logits), grads = grad_fn(data, label)
+            loss = ops.depend(loss, optimizer(grads))
+            return loss, logits
+
         size = dataset.get_dataset_size() # 获取数据集大小
         model.set_train() # 设置网络模式为训练模式
+        resize = nn.ResizeBilinear()
+        expand_dims = ops.ExpandDims()
+        zeroslike = ops.ZerosLike()
+        squeeze = ops.Squeeze(0)
         for batch, (data, label) in enumerate(dataset.create_tuple_iterator()):
             # 获取特征层 用于getbox
             data = data.squeeze(1)
-            ExFeature = CPCNN(model, args)
-            conv_layer = ExFeature(data)
             # 数据处理
-
             label = label.astype('int32')
+            # 进行basenet的训练
             loss, logits = train_step(data, label)
-
             # 使用gradcam 取得CAMmap
             label = ops.Argmax(output_type=ms.int32)(logits)
             saliency = gradcam(data, label, show=False)
             # getbox获取关键区域
             xy_list = get_bbox(data, saliency, rate=0.09)
-            print(xy_list)
+            # xy_list_int =[]
+            # for x in xy_list:
+            #     for
+            #     xy_list_int.append(int(x)) # 转为int类型
+            # print(xy_list_int)
+            # 切分出区域部分
+            range_data = zeroslike(data)
+            for k in range(args.batch_size):
+                [x1, x2, y1, y2] = xy_list[k]
+                if x1 == x2 or y1 == y2:
+                    range_data[k, :, :, :] = data[k, :, :, :]
+                else:
+                    tmp = data[k, :, y1:y2, x1:x2]
+                    tmp = expand_dims(tmp,0)
+                    tmp = resize(tmp,(448,448)) # 上采样，必须4维
+                    tmp = squeeze(tmp)# 三维才能写入range_data
+                    range_data[k,:,:,:] = tmp
 
+            # 训练区域网络
+            loss_re, logits_re = train_box_step(range_data, label)
 
 
             if batch % 100 == 0:
                 loss, current = loss.asnumpy(), batch
-                train_str = (f"loss: {loss:>7f}  [{current:>3d}/{size:>3d}]")
+                train_str = (f"loss: {loss:>7f} loss_re: {loss_re:>7f} [{current:>3d}/{size:>3d}]")
                 print(train_str)
                 with open(exp_dir + '/results_train.txt', 'a') as file:
                     file.write(train_str)

@@ -9,6 +9,7 @@ import time
 
 import numpy
 import mindspore as ms
+import numpy as np
 from mindspore import nn, Model, LossMonitor, TimeMonitor, ops, PYNATIVE_MODE
 from mindspore_xai.explainer import GradCAM,Gradient
 from dataset import get_loader
@@ -63,7 +64,7 @@ def main():
     # os.makedirs(exp_dir, exist_ok=True)
 
     # dataloader
-    train_dataset = get_loader(args, shuffle=True, train=True)
+    train_dataset = get_loader(args, shuffle=False, train=True)
     test_dataset = get_loader(args, shuffle=False, train=False)
     # 获取网络
     model = BaseNet(args)
@@ -80,24 +81,39 @@ def main():
         '''
         # Define forward function
         # saliency_tensor = ms.Tensor()
+        xy_list_all = []
         for batch, (data, label) in enumerate(dataset.create_tuple_iterator()):
             data = data.squeeze(1)
             # [N, 3, 224, 224] Tensor
             label = label.astype('int32')
             label = label.squeeze()
             saliency = gradcam(data, label, show=False)
-            if 'saliency_numpy' in vars():
-                saliency_numpy = numpy.append(saliency_numpy, saliency.asnumpy(), axis = 0) # numpy.append 需要设置axis，否则会被展平，如果多维的话就需要指定按照哪个维度合并
-                numpy.save("saliency.npy", saliency_numpy)
-            else:
-                saliency_numpy = saliency.asnumpy()
+            # 仅getbox
+            # if 'saliency_numpy' in vars():
+            #     saliency_numpy = np.append(saliency_numpy, saliency.asnumpy(), axis = 0) # numpy.append 需要设置axis，否则会被展平，如果多维的话就需要指定按照哪个维度合并
+            #     # 测试
+            #     # np.save("saliency.npy", saliency_numpy)
+            # else:
+            #     saliency_numpy = saliency.asnumpy()
             xy_list = get_bbox(data, saliency, rate=0.09)
-            print(xy_list)
-        numpy.save("saliency.npy", saliency_numpy)
+
+            xy_list_all.append(xy_list)
+            # 测试
+            # xy_list_np = np.array(xy_list_all)
+            # np.save("xy_list.npy", xy_list_np)
+            # xy_list_np = np.load('xy_list.npy', allow_pickle=True)
+            # xy_list = xy_list_np.tolist()
+            # print(xy_list)
+        # np.save("saliency.npy", saliency_numpy)
+        xy_list_np = np.array(xy_list_all)
+        np.save("xy_list_np.npy", xy_list_np)
+        # 读取使用
+        # np.load('a.npy')
+        # a = a.tolist()
 
 
     time_start = time.time()  # 开始计时
-    cam_loop(test_dataset)
+    cam_loop(train_dataset)
     time_eclapse = time.time() - time_start
     print('train time:' + str(time_eclapse) + '\n')  # 输出训练时间
     print("Done!")

@@ -62,12 +62,14 @@ def get_bbox(x, cammap, rate=0.001):
         _, indices_max = argmax_0(indices.astype(ms.float32))
         indices_min = indices_min.astype(ms.int64)
         indices_max = indices_max.astype(ms.int64)
-        y1 = indices_min.item(-2)
-        x1 = indices_min.item(-1)
-        y2 = indices_max.item(-2)
-        x2 = indices_max.item(-1)
+        min_numpy = indices_min.asnumpy()
+        max_numpy = indices_max.asnumpy()
+        y1 = min_numpy[-2]
+        x1 = min_numpy[-1]
+        y2 = max_numpy[-2]
+        x2 = max_numpy[-1]
         # tmp = x[k, :, y1:y2, x1:x2]
         # if x1 == x2 or y1 == y2:
         #     tmp = x[k, :, :, :]
-        xy_list.append([x1, x2, y1, y2])
+        xy_list.append([int(x1), int(x2), int(y1), int(y2)])
     return xy_list
