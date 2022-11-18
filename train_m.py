@@ -18,9 +18,9 @@ from utils import get_bbox
 parser = argparse.ArgumentParser('MindSpore_Awesome', add_help=False)
 parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
-parser.add_argument('-b', '--batch_size', default=16, type=int, metavar='N', help='mini-batch size (default: 64)')
+parser.add_argument('-b', '--batch_size', default=32, type=int, metavar='N', help='mini-batch size (default: 64)')
 parser.add_argument('--resume', default='', type=str, metavar='path', help='path to latest checkpoint (default: none)')
-parser.add_argument('--epochs', default=1, type=int, metavar='N', help='number of total epochs to run')
+parser.add_argument('--epochs', default=10, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--lr', '--learning-rate', default=2e-4, type=float, metavar='LR', help='initial learning rate')
 parser.add_argument('--data', default='CUB', type=str, help='choice database')
 parser.add_argument('--arch', default='resnet50', type=str, help='arch default:resnet50')
@@ -168,7 +168,7 @@ def main():
 
 
             if batch % 100 == 0:
-                loss, current = loss.asnumpy(), batch
+                loss, loss_re, current = loss.asnumpy(), loss_re.asnumpy(), batch
                 train_str = (f"loss: {loss:>7f} loss_re: {loss_re:>7f} [{current:>3d}/{size:>3d}]")
                 print(train_str)
                 with open(exp_dir + '/results_train.txt', 'a') as file:
