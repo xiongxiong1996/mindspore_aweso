@@ -18,9 +18,9 @@ from utils import get_bbox
 parser = argparse.ArgumentParser('MindSpore_Awesome', add_help=False)
 parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
-parser.add_argument('-b', '--batch_size', default=32, type=int, metavar='N', help='mini-batch size (default: 64)')
+parser.add_argument('-b', '--batch_size', default=16, type=int, metavar='N', help='mini-batch size (default: 64)')
 parser.add_argument('--resume', default='', type=str, metavar='path', help='path to latest checkpoint (default: none)')
-parser.add_argument('--epochs', default=10, type=int, metavar='N', help='number of total epochs to run')
+parser.add_argument('--epochs', default=2, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--lr', '--learning-rate', default=2e-4, type=float, metavar='LR', help='initial learning rate')
 parser.add_argument('--data', default='CUB', type=str, help='choice database')
 parser.add_argument('--arch', default='resnet50', type=str, help='arch default:resnet50')
@@ -116,16 +116,6 @@ def main():
             loss = ops.depend(loss, optimizer(grads))
             return loss, logits
 
-        def train_box_step(data, label):
-            '''
-            训练单步，进行优化
-            @param data: 输入数据
-            @param label: 真实标签
-            @return: loss
-            '''
-            (loss, logits), grads = grad_fn(data, label)
-            loss = ops.depend(loss, optimizer(grads))
-            return loss, logits
 
         size = dataset.get_dataset_size() # 获取数据集大小
         model.set_train() # 设置网络模式为训练模式
@@ -140,16 +130,21 @@ def main():
             label = label.astype('int32')
             # 进行basenet的训练
             loss, logits = train_step(data, label)
-            # 使用gradcam 取得CAMmap
+
+            # 使用gradcam 取得CAMmap ！！！！！！！！！！ 存在内存溢出问题！！！！！！！！！！！！！
+            time_start = time.time()  # 开始计时
+
             label = ops.Argmax(output_type=ms.int32)(logits)
-            saliency = gradcam(data, label, show=False)
+            saliency = gradcam(data, label)
+
+            time_eclapse = time.time() - time_start
+            print('gradcam time:' + str(time_eclapse) + '\n')  # 输出训练时间
+
+            # label = ops.Argmax(output_type=ms.int32)(logits)
+            # saliency = gradcam(data, label, show=False)
+
             # getbox获取关键区域
-            xy_list = get_bbox(data, saliency, rate=0.09)
-            # xy_list_int =[]
-            # for x in xy_list:
-            #     for
-            #     xy_list_int.append(int(x)) # 转为int类型
-            # print(xy_list_int)
+            xy_list = get_bbox(data.shape[0], saliency, rate=0.09)
             # 切分出区域部分
             range_data = zeroslike(data)
             for k in range(args.batch_size):
@@ -164,11 +159,10 @@ def main():
                     range_data[k,:,:,:] = tmp
 
             # 训练区域网络
-            loss_re, logits_re = train_box_step(range_data, label)
-
+            loss_re, logits_re = train_step(range_data, label)
 
             if batch % 100 == 0:
-                loss, loss_re, current = loss.asnumpy(), loss_re.asnumpy(), batch
+                loss,loss_re, current = loss.asnumpy(),loss_re.asnumpy(), batch
                 train_str = (f"loss: {loss:>7f} loss_re: {loss_re:>7f} [{current:>3d}/{size:>3d}]")
                 print(train_str)
                 with open(exp_dir + '/results_train.txt', 'a') as file:

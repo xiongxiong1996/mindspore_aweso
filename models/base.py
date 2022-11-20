@@ -99,32 +99,7 @@ class CPCNN(nn.Cell):
     def construct(self, x, y=None):
 
         feature = self.conv(x)
-        # Grad_cam & getbox
-        # 使用图片输入和标准损失，通过gradcam生成权重，来进行box的获取
-        # self.gradcam = GradCAM(self, layer="conv_1")
-        # label = ops.Argmax(output_type=ms.int32)(logits)
-        # self.gradcam = GradCAM(self.basenet, layer="conv_1")
-        # saliency = self.gradcam(x, label, show=False)
-        # print(saliency)
-        # return logits, logits_max, logits_cat
 
-
-        # # 获取max_logits
-        # mx0 = stop_gradient(x1) # 阻止梯度回传
-        # mx1 = self.aap1(mx0)  # amp必须是Int64???
-        # mx1 = mx1.squeeze(2)
-        # mx1 = mx1.squeeze(2)
-        # logits_max = self.cls_max(mx1)
-        #
-        # # 获取cat_logits
-        # # x2 = l2_norm_v2(x2)
-        # cx1 = l2Norm(x2)
-        # cx1 = stop_gradient(cx1)
-        # # cx1 = stop_gradient(l2_norm_v2(x2))
-        # cx2 = stop_gradient(mx1)
-        # op = ops.Concat(1)
-        # cx3 = op((cx1, cx2))
-        # logits_cat = self.cls_cat(cx3)
         return feature
 
     # get params 获取参数

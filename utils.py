@@ -1,3 +1,4 @@
+import numpy as np
 from matplotlib import transforms
 from mindspore import ops, nn, numpy
 import mindspore as ms
@@ -13,7 +14,7 @@ def l2Norm(input):
     return output
 
 
-def get_bbox(x, cammap, rate=0.001):
+def get_bbox(data_shape, cammap, rate=0.001):
     '''
     通过gradecam获得热力图，并获取权重，使用权重来获得box
     :param x: 输入图像 bs*3*448*448
@@ -22,17 +23,11 @@ def get_bbox(x, cammap, rate=0.001):
     :return: xy_list 一个存放了x, y坐标的list。使用时读取list进行切分即可。
     '''
     # .view(conv_layer.size(0), conv_layer.size(1), 14 * 14)
-
-    resize = nn.ResizeBilinear()
     # mean = ops.ReduceMean(keep_dims=True)
     # expand_dims = ops.ExpandDims()
     # zeroslike = ops.ZerosLike()
     # argmax = ops.ArgMaxWithValue(axis=-1, keep_dims=True)
     # argmin = ops.ArgMinWithValue(axis=-1, keep_dims=True)
-    reshape = ops.Reshape()
-    argmax_0 = ops.ArgMaxWithValue(axis=0)
-    argmin_0 = ops.ArgMinWithValue(axis=0)
-    sign = ops.Sign()
     #
     # layer_weights = mean(layer_weights, -1)
     # layer_weights = layer_weights.squeeze(-1)
@@ -49,27 +44,43 @@ def get_bbox(x, cammap, rate=0.001):
     # x_range = mask_max - mask_min
     # # bs,448*448 归一化
     # mask_norm = (mask - mask_min / x_range)
-    mask = cammap
-    # 两次阶跃函数，使得mask中只有0 和1 .有点意思
-    mask = sign(sign(mask-rate)+1)
-    mask = reshape(mask,(mask.shape[0], 1, 448, 448))
 
-    # input_box = zeroslike(x)
+    reshape = ops.Reshape() # 定义reshape
+    argmax_0 = ops.ArgMaxWithValue(axis=0) # 定义argmax
+    argmin_0 = ops.ArgMinWithValue(axis=0) # 定义argmin
+
+    #sign = ops.Sign() # 得自己定义sign否则会报错明天做@！！@！！@@！cao
+    def sign(input):
+        input = input.asnumpy()
+        output = np.sign(input)
+        output = ms.Tensor(output)
+        return output
+    # 两次阶跃函数，使得mask中只有0 和1 .有点意思
+    # mask = sign(sign(mask-rate)+1)
+    mask = sign(sign(cammap-rate)+1)
+    mask = reshape(mask,(mask.shape[0], 1, 448, 448))
     xy_list = []
-    for k in range(x.shape[0]):
+    for k in range(data_shape):
         indices = mask[k].nonzero()
-        _, indices_min = argmin_0(indices.astype(ms.float32))
-        _, indices_max = argmax_0(indices.astype(ms.float32))
-        indices_min = indices_min.astype(ms.int64)
-        indices_max = indices_max.astype(ms.int64)
-        min_numpy = indices_min.asnumpy()
-        max_numpy = indices_max.asnumpy()
-        y1 = min_numpy[-2]
-        x1 = min_numpy[-1]
-        y2 = max_numpy[-2]
-        x2 = max_numpy[-1]
-        # tmp = x[k, :, y1:y2, x1:x2]
-        # if x1 == x2 or y1 == y2:
-        #     tmp = x[k, :, :, :]
+        indices_numpy = indices.asnumpy()
+        if indices_numpy.any():
+            # _, indices_min = argmin_0(indices.astype(ms.float16)) # 出错
+            # _, indices_max = argmax_0(indices.astype(ms.float16)) # 出错
+            # 测试
+            # indices_min = ms.Tensor(np.array([0,0,0]))
+            # indices_max = ms.Tensor(np.array([0, 447, 447]))
+            # min_numpy = indices_min.asnumpy()
+            # max_numpy = indices_max.asnumpy()
+            min_numpy = indices_numpy.min(axis=0)
+            max_numpy = indices_numpy.max(axis=0)
+            y1 = min_numpy[-2]
+            x1 = min_numpy[-1]
+            y2 = max_numpy[-2]
+            x2 = max_numpy[-1]
+        else:
+            y1 = 0
+            x1 = 0
+            y2 = 447
+            x2 = 447
         xy_list.append([int(x1), int(x2), int(y1), int(y2)])
     return xy_list
