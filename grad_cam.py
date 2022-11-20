@@ -95,7 +95,7 @@ def main():
             #     # np.save("saliency.npy", saliency_numpy)
             # else:
             #     saliency_numpy = saliency.asnumpy()
-            xy_list = get_bbox(data, saliency, rate=0.09)
+            xy_list = get_bbox(data.shape[0], saliency, rate=0.09)
 
             xy_list_all.append(xy_list)
             # 测试

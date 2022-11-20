@@ -116,7 +116,7 @@ def main():
             loss = ops.depend(loss, optimizer(grads))
             return loss, logits
 
-
+        # 开始loop
         size = dataset.get_dataset_size() # 获取数据集大小
         model.set_train() # 设置网络模式为训练模式
         resize = nn.ResizeBilinear()
@@ -133,10 +133,8 @@ def main():
 
             # 使用gradcam 取得CAMmap ！！！！！！！！！！ 存在内存溢出问题！！！！！！！！！！！！！
             time_start = time.time()  # 开始计时
-
             label = ops.Argmax(output_type=ms.int32)(logits)
             saliency = gradcam(data, label)
-
             time_eclapse = time.time() - time_start
             print('gradcam time:' + str(time_eclapse) + '\n')  # 输出训练时间
 
