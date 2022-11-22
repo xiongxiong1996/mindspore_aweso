@@ -2,6 +2,7 @@ import numpy as np
 from matplotlib import transforms
 from mindspore import ops, nn, numpy
 import mindspore as ms
+import mindspore.common.dtype as mstype
 
 def l2Norm(input):
     '''
@@ -84,3 +85,22 @@ def get_bbox(data_shape, cammap, rate=0.001):
             x2 = 447
         xy_list.append([int(x1), int(x2), int(y1), int(y2)])
     return xy_list
+
+
+opResizeLinear = ops.ResizeBilinear((224, 224))
+expand_dims = ops.ExpandDims()
+zeros = ops.Zeros()
+def get_partimgs(x_pad, bbox_topk):
+    part_list = []
+    batch_size = x_pad.shape[0]
+    topK=bbox_topk.shape[0]
+    # part_imgs = zeros((batch_size * topK, 3, 224, 224), mstype.int64)
+    bbox_topk = bbox_topk.astype("int64")
+    for i in range(bbox_topk.shape[0]):
+        [y0, x0, y1, x1] = bbox_topk[i, 0:4]
+        part_list.append([int(y0), int(x0), int(y1), int(x1)])
+        # part = x_pad[i, :, y0:y1, x0:x1]
+        # part = expand_dims(part, 0)
+        # part = opResizeLinear(part)
+        # part_imgs[i,:] = part
+    return part_list

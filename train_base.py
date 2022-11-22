@@ -11,7 +11,7 @@ from mindspore import nn, ops, PYNATIVE_MODE
 from mindspore_xai.explainer import GradCAM
 import mindspore.common.dtype as mstype
 from dataset import get_loader
-from models.base import CPCNN, BaseNet, partNet
+from models.base import CPCNN, BaseNet
 from utils import get_bbox, get_partimgs
 
 # 设置网络参数--------------------------------------------------------------------
@@ -20,7 +20,7 @@ parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('-b', '--batch_size', default=16, type=int, metavar='N', help='mini-batch size (default: 64)')
 parser.add_argument('--resume', default='', type=str, metavar='path', help='path to latest checkpoint (default: none)')
-parser.add_argument('--epochs', default=2, type=int, metavar='N', help='number of total epochs to run')
+parser.add_argument('--epochs', default=200, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--topk', default=4, type=int, metavar='N', help='number of topk')
 parser.add_argument('--lr', '--learning-rate', default=2e-4, type=float, metavar='LR', help='initial learning rate')
 parser.add_argument('--data', default='CUB', type=str, help='choice database')
@@ -44,7 +44,7 @@ data_config = {"AIR": [100, "../Data/fgvc-aircraft-2013b"],
 def main():
     global args  # 定义全局变量args
     args = parser.parse_args()
-    args.resume = './2022-11-14-02_CUB_32_0.0002/model.ckpt' # 临时设置
+    args.resume = './2022-11-22-01_CUB_16_0.0002/model.ckpt' # 临时设置
     # 判断是哪个数据集，并选择读取数据的参数，待优化-----------------------------------------
     if args.data == "CUB":
         print("load CUB config")
@@ -68,7 +68,7 @@ def main():
     # 获取网络，如果有ckpt文件则进行读取
     model = BaseNet(args)
     model2 = CPCNN(args)
-    model3 = partNet(args)
+
     # test
     # model2 = CPCNN(args)
     # print(model2)
@@ -88,7 +88,7 @@ def main():
     # optimizer = nn.SGD(model.trainable_params(), learning_rate=args.lr)
     # 定义gradcam
     gradcam = GradCAM(model, layer="layer4")
-    def train_loop(model,model2,model3, dataset, loss_fn, optimizer):
+    def train_loop(model,model2, dataset, loss_fn, optimizer):
         '''
         单次网络训练
         @param model:使用的网络模型
@@ -157,30 +157,6 @@ def main():
             (loss, logits),grads = grad_fn2(data, label)
             loss = ops.depend(loss, optimizer(grads))
             return loss, logits
-
-        def forward_fn3(data, label):
-            '''
-            前向传播计算损失
-            @param data: 输入数据
-            @param label: 真实标签
-            @return:loss,logits 损失及分类结果
-            '''
-            logits = model3(data)
-            loss = loss_fn(logits, label)
-            return loss, logits
-
-        # Get gradient function
-        grad_fn3 = ops.value_and_grad(forward_fn3, None, optimizer.parameters, has_aux=True)
-        def train_step3(data, label):
-            '''
-            训练单步，进行优化
-            @param data: 输入数据
-            @param label: 真实标签
-            @return: loss
-            '''
-            (loss, logits),grads = grad_fn3(data, label)
-            loss = ops.depend(loss, optimizer(grads))
-            return loss, logits
         # 开始loop
         size = dataset.get_dataset_size() # 获取数据集大小
         model.set_train() # 设置网络模式为训练模式
@@ -200,55 +176,9 @@ def main():
             # 进行basenet的训练
             loss, logits = train_step(data, label)
 
-            # 使用gradcam 取得CAMmap ！！！！！！！！！！ 存在内存溢出问题！！！！！！！！！！！！！
-            time_start = time.time()  # 开始计时
-            label = ops.Argmax(output_type=ms.int32)(logits)
-            saliency = gradcam(data, label)
-            time_eclapse = time.time() - time_start
-            print('gradcam time:' + str(time_eclapse) + '\n')  # 输出训练时间
-
-            # label = ops.Argmax(output_type=ms.int32)(logits)
-            # saliency = gradcam(data, label, show=False)
-
-            # getbox获取关键区域
-            xy_list = get_bbox(data.shape[0], saliency, rate=0.09)
-            # xy_list = []
-            # 切分出区域部分
-            range_data = zeroslike(data)
-            for k in range(args.batch_size):
-                if xy_list:
-                    [x1, x2, y1, y2] = xy_list[k]
-                    if x1 == x2 or y1 == y2:
-                        range_data[k, :, :, :] = data[k, :, :, :]
-                    else:
-                        tmp = data[k, :, y1:y2, x1:x2]
-                        tmp = expand_dims(tmp,0)
-                        tmp = resize(tmp,(448,448)) # 上采样，必须4维
-                        tmp = squeeze(tmp)# 三维才能写入range_data
-                        range_data[k,:,:,:] = tmp
-                else:
-                    range_data[k, :, :, :] = data[k, :, :, :]
-            # 区域部分继续划分
-            # 进行pading
-            loss_re, logits_re = train_step2(range_data, label)
-            logits_re, bbox_topk = model2(range_data)
-            x_pad = Pad_ops(data)
-            part_list = get_partimgs(x_pad,bbox_topk)
-            # bbox_topk = bbox_topk.astype("int64")
-            part_imgs = zeros((args.batch_size * args.topk, 3, 224, 224), mstype.int64)
-            for i in range(len(part_list)):
-                [y0, x0, y1, x1] = part_list[i]
-                part = x_pad[i, :, y0:y1, x0:x1]
-                part = expand_dims(part, 0)
-                part = resize(part,(224,224))
-                part = squeeze(part)
-                part_imgs[i, :] = part
-            # print(part_imgs)
-            logits_3 = train_step3(part_imgs, label)
-            print(logits_3)
             if batch % 100 == 0:
-                loss,loss_re, current = loss.asnumpy(),loss_re.asnumpy(), batch
-                train_str = (f"loss: {loss:>7f} loss_re: {loss_re:>7f} [{current:>3d}/{size:>3d}]")
+                loss, current = loss.asnumpy(),batch
+                train_str = (f"loss: {loss:>7f} [{current:>3d}/{size:>3d}]")
                 print(train_str)
                 with open(exp_dir + '/results_train.txt', 'a') as file:
                     file.write(train_str)
@@ -288,7 +218,7 @@ def main():
         print(f"Epoch {epoch + 1}\n-------------------------------")
         # 开始训练
         time_start = time.time()  # 开始计时
-        train_loop(model,model2,model3, train_dataset, loss_ce, optimizer)
+        train_loop(model,model2,train_dataset, loss_ce, optimizer)
 
         time_eclapse = time.time() - time_start
         print('train time:' + str(time_eclapse) + '\n')  # 输出训练时间
