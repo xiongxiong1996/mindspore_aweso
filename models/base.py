@@ -4,7 +4,7 @@ from copy import deepcopy
 import mindspore.nn as nn
 import mindspore as ms
 import numpy as np
-from mindspore import Tensor, Parameter, ops
+from mindspore import Tensor, Parameter, ops, load_checkpoint, load_param_into_net
 from mindspore.ops import stop_gradient
 from mindspore_xai.explainer import GradCAM
 
@@ -14,27 +14,23 @@ from mindspore.ops import functional as F
 from mindspore.ops import operations as P
 import mindspore.common.dtype as mstype
 
-from models.utils import Navigator, generate_default_anchor_maps, SearchTransfer
+from models.utils import Navigator, generate_default_anchor_maps, SearchTransfer, filter_checkpoint_parameter_by_list, \
+    ContextBlock, FeatureEnhanceBlock
 from utils import l2Norm
 
 
 class BaseNet(nn.Cell):
     def __init__(self, args):
         super(BaseNet, self).__init__()
-        # basenet = resnet50(pretrained=True)  # default number_class=1000
-        # basenet = resnet_mindspore.resnet50(200,False)
-        # self.val = Parameter(Tensor(1.0, ms.float32), name="var")
-        # resnet_list = list(basenet.cells())
-        # list1_1 =resnet_list[0][-2]
-        # list1_2 = resnet_list[0][-1]
-        # list2 = resnet_list[1]
-        # list3 = resnet_list[2]
-
-        # resnet = basenet.cells()
-        # print(resnet)
-        # list1 = list(basenet.cells())[0]
-        # self.conv_1 = nn.SequentialCell(list(basenet.cells())[:-2])   # resnet去掉pooling层和线性层
-        # resnet50 去掉layer4和后面的pooling层及线性层
+        # 设定resnet50,并加载与训练参数
+        feature_extractor = my_resnet.resnet50(args.num_classes)
+        # 加载预训练模型
+        param_dict = load_checkpoint('./resnet50.ckpt')
+        # 获取最后一层参数的名字
+        filter_list = [x.name for x in feature_extractor.fc.get_parameters()]
+        # 删除预训练模型最后一层的参数
+        filter_checkpoint_parameter_by_list(param_dict, filter_list)
+        load_param_into_net(feature_extractor, param_dict)
         self.conv_1 = my_resnet.resnet50(args.num_classes)
         # resnet50的layer4
         self.block = my_resnet.ResidualBlock
@@ -106,8 +102,8 @@ class CPCNN(nn.Cell):
 
         self.conv_1 = my_resnet.resnet50(args.num_classes)
         # resnet50的layer4
-        self.block = my_resnet.ResidualBlock
-        self.layer4 = my_resnet.make_layer(256 * self.block.expansion, self.block, 512, 3, stride=2)
+        # self.block = my_resnet.ResidualBlock
+        # self.layer4 = my_resnet.make_layer(256 * self.block.expansion, self.block, 512, 3, stride=2)
         # 全局平均池化
         self.aap1 = ops.AdaptiveAvgPool2D(1)
         # 全局最大池化
@@ -119,6 +115,7 @@ class CPCNN(nn.Cell):
         # NTS-Net
         self.topK = args.topk
         self.navigator = Navigator()  # navigator
+        self.FeatureEnhanceBlock = FeatureEnhanceBlock() # FeatureEnhanceBlock
         _, edge_anchors, _ = generate_default_anchor_maps()  # 生成默认锚点maps
         self.np_edge_anchors = edge_anchors + 224  # 锚点
         self.edge_anchors = Tensor(self.np_edge_anchors, mstype.float32)
@@ -138,26 +135,22 @@ class CPCNN(nn.Cell):
         self.resize = nn.ResizeBilinear()
         self.expand_dims = ops.ExpandDims()
 
+        self.squeeze = ops.Squeeze(0)
+        self.pad_side = 224  # pad参数
+        self.Pad_ops = ops.Pad(((0, 0), (0, 0), (self.pad_side, self.pad_side), (self.pad_side, self.pad_side)))
+
         # self.basenet = nn.SequentialCell(list(basenet.cells())[:])
 
     # 反向传播不是forward 而是 construct
     def construct(self, x, y=None):
         # 获取feature1_rpn feature2 及logits, 这里和ntsnet中extractfeature对应。
-        output, x1, feature1, feature2 = self.conv_1(x)
-        # layer4
-        x1 = self.layer4(x1)
-        rpn_feature = x1
-        # aap
-        x1 = self.aap1(x1)
-        x1 = x1.squeeze(2)
-        x1 = x1.squeeze(2)
-        feature2 = x1
-        logits = self.classifier(x1)
-
+        resnet_logits, _, feature1, feature2 = self.conv_1(x)
+        rpn_feature = feature1
         batch_size = x.shape[0]
         rpn_feature = F.stop_gradient(rpn_feature)
         # 获得rpn_score
-        rpn_score = self.navigator(rpn_feature)
+        # rpn_score = self.navigator(rpn_feature)
+        rpn_score = self.FeatureEnhanceBlock(rpn_feature)
         # 获得anchors
         edge_anchors = self.edge_anchors
         # 用于存放top_k信息
@@ -186,10 +179,18 @@ class CPCNN(nn.Cell):
             for i in range(bbox_topk.shape[0]):
                 [y0, x0, y1, x1] = bbox_topk[i, 0:4]
                 part_list.append([int(y0), int(x0), int(y1), int(x1)])
-
+        # 测试可不可以
+        x_pad = self.Pad_ops(x)
+        part_imgs = self.zeros((16 * self.topK, 3, 224, 224), mstype.float32)
+        for i in range(len(part_list)):
+            [y0, x0, y1, x1] = part_list[i]
+            part = x_pad[i, :, y0:y1, x0:x1]
+            part = self.expand_dims(part, 0)
+            part = self.resize(part, (224, 224))
+            part = self.squeeze(part)
+            part_imgs[i, :] = part
         # 对part imgs进行特征提取
-
-        return logits, bbox_topk, part_list
+        return resnet_logits, part_list
 
     # get params 获取参数
     def get_params(self, prefix='extractor'):
@@ -223,23 +224,28 @@ class partNet(nn.Cell):
         self.opReshape = ops.Reshape()  # reshape
         self.squeezeop = P.Squeeze()  # squeeze
 
-        self.concat_op = ops.Concat(axis=1)
+        self.concat_op_0 = ops.Concat(axis=0)
 
         self.zeros = ops.Zeros()
         self.resize = nn.ResizeBilinear()
         self.expand_dims = ops.ExpandDims()
-
         # self.basenet = nn.SequentialCell(list(basenet.cells())[:])
-
+        self.part_classifier = nn.Dense(2048, args.num_classes)
+        self.trans_classifier = nn.Dense(2048, args.num_classes)
+        self.global_context = ContextBlock()
     # 反向传播不是forward 而是 construct
     def construct(self, x, y=None):
         # 获取feature1_rpn feature2 及logits, 这里和ntsnet中extractfeature对应。
         batch_size = self.batch_size
-        output, feature_low, feature1, feature2 = self.conv_1(x)
+        _, feature_low, feature1, feature2 = self.conv_1(x)
         part_feature = self.aap1(feature1)
-        part_feature_rank = self.squeezeop(part_feature,-1)  # bs*topk,2048
+        # avgpooling
+        part_feature_rank = self.opReshape(part_feature,(part_feature.shape[0],-1))
+        # part 基本损失
+        part_logits = self.part_classifier(part_feature_rank)
+        # part_logits = self.opReshape(part_logits,(self.batch_size, self.topK, -1))
 
-        part_features_all = self.opReshape(feature1,(batch_size,self.topK,-1)) # bs,topN,2048,7,7
+        part_features_all = self.opReshape(feature1,(batch_size,self.topK,feature1.shape[1],feature1.shape[2],feature1.shape[3])) # bs,topN,2048,7,7
         part_features_I0 = part_features_all[:, 0, ...]
         part_features_I1 = part_features_all[:, 1, ...]
         part_features_I2 = part_features_all[:, 2, ...]
@@ -250,5 +256,17 @@ class partNet(nn.Cell):
         # 跨特征增强
         S3 = self.SearchTransfer3(part_features_I0, part_features_I3)
         # 对part imgs进行特征提取
-        output = output[0:batch_size-1,:] # 只是为了能跑
-        return output
+        part_features_tran = self.concat_op_0((part_features_I0, S1, S2, S3), )
+        # 进行全局上下文
+        part_features_tran = self.global_context(part_features_tran)
+        # avgpooling
+        global_features = self.aap1(part_features_tran)
+        part_features = self.opReshape(global_features, (global_features.shape[0], -1))
+        part_features = self.opReshape(part_features, (self.batch_size* self.topK, -1))
+        # transfer后的part损失
+        trans_logits = self.trans_classifier(l2Norm(part_features))
+        # part的trans_logits
+        # trans_logits = self.opReshape(trans_logits, (self.batch_size, self.topK, -1))
+        # 少一个part_logits和boxx的feature的融合。
+        # ！！！！！！！！！#
+        return part_logits, trans_logits

@@ -12,7 +12,7 @@ from mindspore_xai.explainer import GradCAM
 import mindspore.common.dtype as mstype
 from dataset import get_loader
 from models.base import CPCNN, BaseNet
-from utils import get_bbox, get_partimgs
+from utils import get_bbox
 
 # 设置网络参数--------------------------------------------------------------------
 parser = argparse.ArgumentParser('MindSpore_Awesome', add_help=False)
@@ -20,7 +20,7 @@ parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('-b', '--batch_size', default=16, type=int, metavar='N', help='mini-batch size (default: 64)')
 parser.add_argument('--resume', default='', type=str, metavar='path', help='path to latest checkpoint (default: none)')
-parser.add_argument('--epochs', default=200, type=int, metavar='N', help='number of total epochs to run')
+parser.add_argument('--epochs', default=10, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--topk', default=4, type=int, metavar='N', help='number of topk')
 parser.add_argument('--lr', '--learning-rate', default=2e-4, type=float, metavar='LR', help='initial learning rate')
 parser.add_argument('--data', default='CUB', type=str, help='choice database')
@@ -44,7 +44,7 @@ data_config = {"AIR": [100, "../Data/fgvc-aircraft-2013b"],
 def main():
     global args  # 定义全局变量args
     args = parser.parse_args()
-    args.resume = './2022-11-22-01_CUB_16_0.0002/model.ckpt' # 临时设置
+    # args.resume = './2022-11-22-02_CUB_16_0.0002/model.ckpt' # 临时设置
     # 判断是哪个数据集，并选择读取数据的参数，待优化-----------------------------------------
     if args.data == "CUB":
         print("load CUB config")

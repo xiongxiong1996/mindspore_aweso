@@ -7,12 +7,13 @@ import argparse
 import os
 import time
 import mindspore as ms
+import numpy as np
 from mindspore import nn, ops, PYNATIVE_MODE
 from mindspore_xai.explainer import GradCAM
 import mindspore.common.dtype as mstype
 from dataset import get_loader
 from models.base import CPCNN, BaseNet, partNet
-from utils import get_bbox, get_partimgs
+from utils import get_bbox
 
 # 设置网络参数--------------------------------------------------------------------
 parser = argparse.ArgumentParser('MindSpore_Awesome', add_help=False)
@@ -44,7 +45,7 @@ data_config = {"AIR": [100, "../Data/fgvc-aircraft-2013b"],
 def main():
     global args  # 定义全局变量args
     args = parser.parse_args()
-    args.resume = './2022-11-14-02_CUB_32_0.0002/model.ckpt' # 临时设置
+    # args.resume = './2022-11-22-02_CUB_16_0.0002/model.ckpt' # 临时设置
     # 判断是哪个数据集，并选择读取数据的参数，待优化-----------------------------------------
     if args.data == "CUB":
         print("load CUB config")
@@ -137,7 +138,7 @@ def main():
             @return:loss,logits 损失及分类结果
             '''
             # logits, logits_max, logits_cat = model(data)
-            logits,bbox_topk = model2(data)
+            logits,part_list = model2(data)
             # fe1,fe2 = model2(data)
             # print(fe1)
             # print(fe2)
@@ -165,8 +166,12 @@ def main():
             @param label: 真实标签
             @return:loss,logits 损失及分类结果
             '''
-            logits = model3(data)
-            loss = loss_fn(logits, label)
+            part_logits, trans_logits = model3(data)
+            label_np = label.asnumpy()
+            topk = 4
+            label_np = np.repeat(label_np, topk)
+            label = ms.Tensor(label_np)
+            loss = loss_fn(part_logits, label) + loss_fn(trans_logits, label)
             return loss, logits
 
         # Get gradient function
@@ -231,11 +236,9 @@ def main():
             # 区域部分继续划分
             # 进行pading
             loss_re, logits_re = train_step2(range_data, label)
-            logits_re, bbox_topk = model2(range_data)
+            logits_re, part_list = model2(range_data)
             x_pad = Pad_ops(data)
-            part_list = get_partimgs(x_pad,bbox_topk)
-            # bbox_topk = bbox_topk.astype("int64")
-            part_imgs = zeros((args.batch_size * args.topk, 3, 224, 224), mstype.int64)
+            part_imgs = zeros((args.batch_size * args.topk, 3, 224, 224), mstype.float32)
             for i in range(len(part_list)):
                 [y0, x0, y1, x1] = part_list[i]
                 part = x_pad[i, :, y0:y1, x0:x1]
@@ -244,11 +247,10 @@ def main():
                 part = squeeze(part)
                 part_imgs[i, :] = part
             # print(part_imgs)
-            logits_3 = train_step3(part_imgs, label)
-            print(logits_3)
+            loss_3, logits_3 = train_step3(part_imgs, label)
             if batch % 100 == 0:
-                loss,loss_re, current = loss.asnumpy(),loss_re.asnumpy(), batch
-                train_str = (f"loss: {loss:>7f} loss_re: {loss_re:>7f} [{current:>3d}/{size:>3d}]")
+                loss,loss_re,loss_3, current = loss.asnumpy(),loss_re.asnumpy(), loss_3.asnumpy(), batch
+                train_str = (f"loss: {loss:>7f} loss_re: {loss_re:>7f} loss_part: {loss_3:>7f} [{current:>3d}/{size:>3d}]")
                 print(train_str)
                 with open(exp_dir + '/results_train.txt', 'a') as file:
                     file.write(train_str)
