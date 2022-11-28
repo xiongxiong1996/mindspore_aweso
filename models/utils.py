@@ -1,36 +1,18 @@
+import time
+
 import numpy as np
 import math
 from mindspore import ops, Tensor, nn
 import mindspore.common.dtype as mstype
 from mindspore.ops import functional as F
+from mindspore.ops import operations as P
+import mindspore as ms
 
 _default_anchors_setting = (
     dict(layer='p3', stride=32, size=48, scale=[2 ** (1. / 3.), 2 ** (2. / 3.)], aspect_ratio=[0.667, 1, 1.5]),
     dict(layer='p4', stride=64, size=96, scale=[2 ** (1. / 3.), 2 ** (2. / 3.)], aspect_ratio=[0.667, 1, 1.5]),
     dict(layer='p5', stride=128, size=192, scale=[1, 2 ** (1. / 3.), 2 ** (2. / 3.)], aspect_ratio=[0.667, 1, 1.5]),
 )
-
-
-def _fc(in_channel, out_channel):
-    '''Weight init for dense cell'''
-    stdv = 1 / math.sqrt(in_channel)
-    weight = Tensor(np.random.uniform(-stdv, stdv, (out_channel, in_channel)).astype(np.float32))
-    bias = Tensor(np.random.uniform(-stdv, stdv, (out_channel)).astype(np.float32))
-    return nn.Dense(in_channel, out_channel, has_bias=True,
-                    weight_init=weight, bias_init=bias).to_float(mstype.float32)
-
-
-def _conv(in_channels, out_channels, kernel_size=3, stride=1, padding=0, pad_mode='pad'):
-    """Conv2D wrapper."""
-    shape = (out_channels, in_channels, kernel_size, kernel_size)
-    stdv = 1 / math.sqrt(in_channels * kernel_size * kernel_size)
-    weights = Tensor(np.random.uniform(-stdv, stdv, shape).astype(np.float32))
-    shape_bias = (out_channels,)
-    biass = Tensor(np.random.uniform(-stdv, stdv, shape_bias).astype(np.float32))
-    return nn.Conv2d(in_channels, out_channels,
-                     kernel_size=kernel_size, stride=stride, padding=padding,
-                     pad_mode=pad_mode, weight_init=weights, has_bias=True, bias_init=biass)
-
 
 def generate_default_anchor_maps(anchors_setting=None, input_shape=(448, 448)):
     """
@@ -81,7 +63,6 @@ def generate_default_anchor_maps(anchors_setting=None, input_shape=(448, 448)):
                 anchor_areas = np.concatenate((anchor_areas, anchor_area_map.reshape(-1)))
     return center_anchors, edge_anchors, anchor_areas
 
-
 def filter_checkpoint_parameter_by_list(origin_dict, param_filter):
     '''
     用于读取resnet50模型参数时去掉线性层参数
@@ -96,6 +77,7 @@ def filter_checkpoint_parameter_by_list(origin_dict, param_filter):
                 del origin_dict[key]
                 break
 
+
 def rerange(input, index):
     '''
 
@@ -106,39 +88,9 @@ def rerange(input, index):
     '''
     opReshape = ops.Reshape()
     index = opReshape(index, (index.shape[0], 1, index.shape[1]))
-    index = F.broadcast_to(index, (index.shape[0],input.shape[1] ,index.shape[2]))
+    index = F.broadcast_to(index, (index.shape[0], input.shape[1], index.shape[2]))
     output = ops.GatherD()(input, 2, index)
     return output
-
-class Navigator(nn.Cell):
-    """Navigator"""
-
-    def __init__(self):
-        """Navigator init"""
-        super(Navigator, self).__init__()
-        self.down1 = _conv(2048, 128, 3, 1, padding=1, pad_mode='pad')
-        self.down2 = _conv(128, 128, 3, 2, padding=1, pad_mode='pad')
-        self.down3 = _conv(128, 128, 3, 2, padding=1, pad_mode='pad')
-        self.ReLU = nn.ReLU()
-        self.tidy1 = _conv(128, 6, 1, 1, padding=0, pad_mode='same')
-        self.tidy2 = _conv(128, 6, 1, 1, padding=0, pad_mode='same')
-        self.tidy3 = _conv(128, 9, 1, 1, padding=0, pad_mode='same')
-        self.opConcat = ops.Concat(axis=1)
-        self.opReshape = ops.Reshape()
-
-    def construct(self, x):
-        """Navigator construct"""
-        batch_size = x.shape[0]
-        d1 = self.ReLU(self.down1(x))
-        d2 = self.ReLU(self.down2(d1))
-        d3 = self.ReLU(self.down3(d2))
-        t1 = self.tidy1(d1)
-        t2 = self.tidy2(d2)
-        t3 = self.tidy3(d3)
-        t1 = self.opReshape(t1, (batch_size, -1, 1))
-        t2 = self.opReshape(t2, (batch_size, -1, 1))
-        t3 = self.opReshape(t3, (batch_size, -1, 1))
-        return self.opConcat((t1, t2, t3))
 
 
 class SearchTransfer(nn.Cell):
@@ -188,9 +140,9 @@ class SearchTransfer(nn.Cell):
         # (bs,18432,49)
         part_ref_rerang_unflod = rerange(part_ref_unfold1, max_index)
         # 没有flod算子，使用卷积代替，先运行着。  (bs,2048,7,7)
-        part_ref_rerang = self.opReshape(part_ref_rerang_unflod, (part_ref_rerang_unflod.shape[0], part_ref_rerang_unflod.shape[1], 7, 7))
+        part_ref_rerang = self.opReshape(part_ref_rerang_unflod,
+                                         (part_ref_rerang_unflod.shape[0], part_ref_rerang_unflod.shape[1], 7, 7))
         part_ref_rerang = self.flod(part_ref_rerang)
-
         # V^和part_features_I1融合
         con_res = self.concat_op((part_ref_rerang, part_target))
         # 维度转换 4096->2048 1*1卷积
@@ -208,7 +160,7 @@ class ContextBlock(nn.Cell):
         super(ContextBlock, self).__init__()
         # 1*1卷积核降维
         self.opReshape = ops.Reshape()  # reshape
-        self.concat_op = ops.Concat(axis=-1) # axis=-1
+        self.concat_op = ops.Concat(axis=-1)  # axis=-1
 
         self.zeros = ops.Zeros()
         self.resize = nn.ResizeBilinear()
@@ -221,16 +173,18 @@ class ContextBlock(nn.Cell):
         self.aap5 = ops.AdaptiveAvgPool2D(5)
         self.softmax = ops.Softmax(axis=2)
         self.conv1 = nn.Conv2d(2048, 8192, 1, stride=1, pad_mode='valid', has_bias=True, weight_init='normal')
-        self.layernorm = nn.LayerNorm([8192,7,7], begin_norm_axis=1, begin_params_axis=1) # begin_norm_axis=1, begin_params_axis=1 这两个参数还没搞清楚
+        self.layernorm = nn.LayerNorm([8192, 7, 7], begin_norm_axis=1,
+                                      begin_params_axis=1)  # begin_norm_axis=1, begin_params_axis=1 这两个参数还没搞清楚
         self.relu = nn.ReLU()
         self.conv2 = nn.Conv2d(8192, 2048, 1, stride=1, pad_mode='valid', has_bias=True, weight_init='normal')
+
     # 反向传播不是forward 而是 construct
-    def construct(self, x): # x : part_features_tran
+    def construct(self, x):  # x : part_features_tran
         # psp
         batch, channel, height, width = x.shape
         # (bs*4,2048,1)
         aap1 = self.aap1(x)
-        aap1 = self.opReshape(aap1,(aap1.shape[0],aap1.shape[1],-1))
+        aap1 = self.opReshape(aap1, (aap1.shape[0], aap1.shape[1], -1))
         # (bs*4,2048,9)
         aap3 = self.aap3(x)
         aap3 = self.opReshape(aap3, (aap3.shape[0], aap3.shape[1], -1))
@@ -238,10 +192,10 @@ class ContextBlock(nn.Cell):
         aap5 = self.aap5(x)
         aap5 = self.opReshape(aap5, (aap5.shape[0], aap5.shape[1], -1))
         # (bs*4,2048,35)
-        psp_feature = self.concat_op((aap1,aap3,aap5))# axis = -1
+        psp_feature = self.concat_op((aap1, aap3, aap5))  # axis = -1
         psp_feature = self.softmax(psp_feature)  # axis =2
         # 将要x  reshape
-        input_x = self.opReshape(x,(batch,height*width,channel))
+        input_x = self.opReshape(x, (batch, height * width, channel))
         # x 乘 psp_feature，再乘psp_feature的转置。    x * pf * pf^T
         psp_feature_T = self.opReshape(psp_feature, (psp_feature.shape[0], psp_feature.shape[2], psp_feature.shape[1]))
         # bs*4,49,2048,2048
@@ -249,11 +203,11 @@ class ContextBlock(nn.Cell):
         # bs*4,49,2048
         context_mask = ops.matmul(input_x, context_mask)
         # psp_feature转置
-        contex = self.opReshape(context_mask,(batch, channel, height, width))
+        contex = self.opReshape(context_mask, (batch, channel, height, width))
         # channel_add_conv
         # conv2d
         conv_contex = self.conv1(contex)
-        conv_contex = self.layernorm(conv_contex) # layernorm 的两个参数没特别清楚。
+        conv_contex = self.layernorm(conv_contex)  # layernorm 的两个参数没特别清楚。
         conv_contex = self.relu(conv_contex)
         conv_contex = self.conv2(conv_contex)
         output = x + conv_contex
@@ -265,7 +219,7 @@ class FeatureEnhanceBlock(nn.Cell):
         super(FeatureEnhanceBlock, self).__init__()
         # 1*1卷积核降维
         self.opReshape = ops.Reshape()  # reshape
-        self.concat_op = ops.Concat(axis=-1) # axis=-1
+        self.concat_op = ops.Concat(axis=-1)  # axis=-1
         self.opConcat = ops.Concat(axis=1)
         self.zeros = ops.Zeros()
         self.resize = nn.ResizeBilinear()
@@ -274,7 +228,7 @@ class FeatureEnhanceBlock(nn.Cell):
         self.l2_normalize = ops.L2Normalize(axis=1)
         self.argmax = ops.ArgMaxWithValue(axis=1)
         self.aap1 = ops.AdaptiveAvgPool2D(1)
-        self.softmax = ops.Softmax(axis=1) # dim=1
+        self.softmax = ops.Softmax(axis=1)  # dim=1
         self.relu = nn.ReLU()
         self.conv1 = nn.Conv2d(2048, 128, 3, stride=1, pad_mode='same', has_bias=True, weight_init='normal')
         self.conv2 = nn.Conv2d(128, 128, 3, stride=2, pad_mode='same', has_bias=True, weight_init='normal')
@@ -283,20 +237,21 @@ class FeatureEnhanceBlock(nn.Cell):
         self.tidy1 = nn.Conv2d(128, 6, 1, stride=1, pad_mode='same', has_bias=True, weight_init='normal')
         self.tidy2 = nn.Conv2d(128, 6, 1, stride=1, pad_mode='same', has_bias=True, weight_init='normal')
         self.tidy3 = nn.Conv2d(128, 9, 1, stride=1, pad_mode='same', has_bias=True, weight_init='normal')
+
     # 反向传播不是forward 而是 construct
-    def construct(self, x): # x : feature bs,2048,14,14
+    def construct(self, x):  # x : feature bs,2048,14,14
         batch_size = x.shape[0]
         d1 = self.relu(self.conv1(x))
         d2 = self.relu(self.conv2(d1))
         d3 = self.relu(self.conv3(d2))
-        d2_1 = self.softmax(self.aap1(d2)) # bs,128,4,1
-        e2_1 = d2_1 * d1 # setp1  bs,128,14,14
-        d1_final = d1 - e2_1 # setp2 bs,128,14,14
-        d2_2 = d2 + self.downsample(e2_1) # setp3 bs,128,7,7
-        d3_1 = self.softmax(self.aap1(d3))# bs,128,1,1
-        e3_1 = d3_1 * d2_2 # step4 bs,128,7,7
-        d2_final = d2_2 - e3_1 # step5 bs,128,7,7
-        d3_final = d3 + self.downsample(e3_1) # step6 bs,128,4,4
+        d2_1 = self.softmax(self.aap1(d2))  # bs,128,4,1
+        e2_1 = d2_1 * d1  # setp1  bs,128,14,14
+        d1_final = d1 - e2_1  # setp2 bs,128,14,14
+        d2_2 = d2 + self.downsample(e2_1)  # setp3 bs,128,7,7
+        d3_1 = self.softmax(self.aap1(d3))  # bs,128,1,1
+        e3_1 = d3_1 * d2_2  # step4 bs,128,7,7
+        d2_final = d2_2 - e3_1  # step5 bs,128,7,7
+        d3_final = d3 + self.downsample(e3_1)  # step6 bs,128,4,4
 
         t1 = self.tidy1(d1_final)
         t2 = self.tidy2(d2_final)
@@ -306,3 +261,193 @@ class FeatureEnhanceBlock(nn.Cell):
         t3 = self.opReshape(t3, (batch_size, -1, 1))
         output = self.opConcat((t1, t2, t3))
         return output
+
+
+def l2Norm(input):
+    """
+    L2归一化
+    @param input: 需要归一化的层
+    @return: 归一化后的结果
+    """
+    input_size = input.shape  # 不能用size，要用shape。。
+    lp = ops.LpNorm(axis=0, p=2, keep_dims=True)
+    _output = input / (lp(input))  # torch.norm 求范数 dim=-1
+    output = _output.view(input_size)  # 看起来没用
+    return output
+
+
+def get_bbox(data_shape, cammap, rate=0.001):
+    '''
+    通过gradecam获得热力图，并获取权重，使用权重来获得box
+    :param x: 输入图像 bs*3*448*448
+    :param cammap bs*1*448*448
+    :param rate:  getbox的rate
+    :return: xy_list 一个存放了x, y坐标的list。使用时读取list进行切分即可。
+    '''
+    # .view(conv_layer.size(0), conv_layer.size(1), 14 * 14)
+    # mean = ops.ReduceMean(keep_dims=True)
+    # expand_dims = ops.ExpandDims()
+    # zeroslike = ops.ZerosLike()
+    # argmax = ops.ArgMaxWithValue(axis=-1, keep_dims=True)
+    # argmin = ops.ArgMinWithValue(axis=-1, keep_dims=True)
+    #
+    # layer_weights = mean(layer_weights, -1)
+    # layer_weights = layer_weights.squeeze(-1)
+    # layer_weights = mean(layer_weights, -1)
+    # # layer_weights = layer_weights.squeeze(-1)
+    # # layer_weights = expand_dims(layer_weights, -1)
+    # conv_layer = reshape(conv_layer, (conv_layer.shape[0], conv_layer.shape[1], conv_layer.shape[2] * conv_layer.shape[3]))
+    # conv_cam = conv_layer * layer_weights
+    # mask = reshape(cammap, (cammap.shape[0], -1))
+    # # bs,1       max-min
+    # _, mask_min = argmin(mask)
+    # _, mask_max = argmax(mask)
+    #
+    # x_range = mask_max - mask_min
+    # # bs,448*448 归一化
+    # mask_norm = (mask - mask_min / x_range)
+
+    reshape = ops.Reshape()  # 定义reshape
+    argmax_0 = ops.ArgMaxWithValue(axis=0)  # 定义argmax
+    argmin_0 = ops.ArgMinWithValue(axis=0)  # 定义argmin
+
+    # sign = ops.Sign() # 得自己定义sign否则会报错明天做@！！@！！@@！cao
+    def sign(input):
+        input = input.asnumpy()
+        output = np.sign(input)
+        output = ms.Tensor(output)
+        return output
+
+    # 两次阶跃函数，使得mask中只有0 和1 .有点意思
+    # mask = sign(sign(mask-rate)+1)
+    mask = sign(sign(cammap - rate) + 1)
+    mask = reshape(mask, (mask.shape[0], 1, 448, 448))
+    xy_list = []
+    for k in range(data_shape):
+        indices = mask[k].nonzero()
+        indices_numpy = indices.asnumpy()
+        if indices_numpy.any():
+            # _, indices_min = argmin_0(indices.astype(ms.float16)) # 出错
+            # _, indices_max = argmax_0(indices.astype(ms.float16)) # 出错
+            # 测试
+            # indices_min = ms.Tensor(np.array([0,0,0]))
+            # indices_max = ms.Tensor(np.array([0, 447, 447]))
+            # min_numpy = indices_min.asnumpy()
+            # max_numpy = indices_max.asnumpy()
+            min_numpy = indices_numpy.min(axis=0)
+            max_numpy = indices_numpy.max(axis=0)
+            y1 = min_numpy[-2]
+            x1 = min_numpy[-1]
+            y2 = max_numpy[-2]
+            x2 = max_numpy[-1]
+        else:
+            y1 = 0
+            x1 = 0
+            y2 = 447
+            x2 = 447
+        xy_list.append([int(x1), int(x2), int(y1), int(y2)])
+    return xy_list
+
+
+def get_parts(args, rpn_score, imgs):
+    batch_size = imgs.shape[0]
+    # 基本变换
+    opReshape = ops.Reshape()
+    opSort = ops.Sort(descending=True)  # sort
+    opSqueeze = P.Squeeze()
+    gatherND = ops.GatherNd()
+    opConcat_1 = ops.Concat(axis=1)
+    opTopk = ops.TopK(sorted=True)
+    pad_side = 224  # pad参数
+    opPad = ops.Pad(((0, 0), (0, 0), (pad_side, pad_side), (pad_side, pad_side)))
+    opZeros = ops.Zeros()
+    resize = nn.ResizeBilinear() # 上采样
+    opExpand = ops.ExpandDims()
+    opSqueeze = ops.Squeeze()
+    # nms
+    nms = P.NMSWithMask(0.3)
+    # select
+    select = P.Select()
+
+    # 生成锚点
+    _, edge_anchors, _ = generate_default_anchor_maps()  # 生成默认锚点maps
+    np_edge_anchors = edge_anchors + 224  # 锚点
+    edge_anchors = Tensor(np_edge_anchors, mstype.float32)
+    # unchosen_score
+    selected_mask_shape = (1614,)
+    min_float_num = -65536.0
+    unchosen_score = Tensor(min_float_num * np.ones(selected_mask_shape, np.float32),
+                            mstype.float32)
+    # pad
+    x_pad = opPad(imgs)
+    part_imgs = opZeros((batch_size * args.topk, 3, 224, 224), mstype.float32)
+    topk_indices_all = opZeros((batch_size , args.topk), mstype.int32)
+    # 用于存放top_k信息
+    for i in range(batch_size):
+        rpn_score_current_img = opReshape(rpn_score[i:i + 1:1, ::], (-1, 1))  # 取第i个，并reshape
+        bbox_score = opSqueeze(rpn_score_current_img)  # squeeze 去掉为1的维度
+        bbox_score_sorted, bbox_score_sorted_indices = opSort(bbox_score)  # 按照降序排序，输出值和索引
+        bbox_score_sorted_concat = opReshape(bbox_score_sorted, (-1, 1))  # reshape升维，和extend一样
+        # 根据indices描述的索引，提取params上的元素， 重新构建一个tensor   实现edge_anchors排序
+        edge_anchors_sorted_concat = gatherND(edge_anchors, opReshape(bbox_score_sorted_indices, (1614, 1)))
+        bbox = opConcat_1(
+            (edge_anchors_sorted_concat, bbox_score_sorted_concat))  # edge和bbox concat按照维度(1614,5)
+        _, _, selected_mask = nms(bbox)  # nms抑制，selected_mask(1614,),全为true或false
+        selected_mask = F.stop_gradient(selected_mask)  # 停止梯度计算
+        # bbox_score = self.squeezeop(bbox_score_sorted_concat) # 还不如直接用 bbox_score_sorted
+        # scores_using = self.select(selected_mask, bbox_score, self.unchosen_score)# 根据mask，看从谁中进行选择。False的被给予了最小的浮点数
+        scores_using = select(selected_mask, bbox_score_sorted, unchosen_score)
+        # select the topk anchors and scores after nms
+        _, topK_indices = opTopk(scores_using, args.topk)  # 找四个最大元素，返回indices
+        topk_indices_all[i,:] = topK_indices
+        topK_indices = opReshape(topK_indices, (args.topk, 1))
+        bbox_topk = gatherND(bbox, topK_indices)  # 按照topk_indices从bbox取出值
+        # 生成partimage的list用于取part imgs
+        part_list = []
+        bbox_topk = bbox_topk.astype("int64")
+        # for j in range(bbox_topk.shape[0]):
+        #     [y0, x0, y1, x1] = bbox_topk[j, 0:4]
+        #     part_list.append([int(y0), int(x0), int(y1), int(x1)])
+        # # part imgs
+        for k in range(len(part_list)):
+            # [y0, x0, y1, x1] = part_list[k]
+            [y0, x0, y1, x1] = bbox_topk[k, 0:4]
+            part = x_pad[i, :, y0:y1, x0:x1]
+            part = opExpand(part, 0)
+            part = resize(part, (224, 224))
+            part = opSqueeze(part)
+            part_imgs[args.topk*i+k, :] = part
+    return part_imgs, topk_indices_all
+
+def Transfer(input):
+    """
+    特征融合
+    @param input: 需要融合的特征
+    @return: 融合后的特征
+    """
+    # Transfer
+    SearchTransfer1 = SearchTransfer()
+    SearchTransfer2 = SearchTransfer()
+    SearchTransfer3 = SearchTransfer()
+    concat_op_0 = ops.Concat(axis=0)
+
+    time_start = time.time()  # 开始计时
+    part_features_all = input
+    part_features_I0 = part_features_all[:, 0, ...]
+    part_features_I1 = part_features_all[:, 1, ...]
+    part_features_I2 = part_features_all[:, 2, ...]
+    part_features_I3 = part_features_all[:, 3, ...]
+    time_eclapse = time.time() - time_start
+    print('Transfer_pre time:' + str(time_eclapse) + '\n')  # 输出训练时间
+
+    time_start = time.time()  # 开始计时
+    S1 = SearchTransfer1(part_features_I0, part_features_I1)
+    # 跨特征增强
+    S2 = SearchTransfer2(part_features_I0, part_features_I2)
+    # 跨特征增强
+    S3 = SearchTransfer3(part_features_I0, part_features_I3)
+    time_eclapse = time.time() - time_start
+    print('Transfer1-3 time:' + str(time_eclapse) + '\n')  # 输出训练时间
+    # 对part imgs进行特征提取
+    part_features_tran = concat_op_0((part_features_I0, S1, S2, S3))
+    return part_features_tran

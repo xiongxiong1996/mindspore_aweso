@@ -211,7 +211,7 @@ def main():
             saliency = gradcam(data, label)
             time_eclapse = time.time() - time_start
             print('gradcam time:' + str(time_eclapse) + '\n')  # 输出训练时间
-
+            time_start = time.time()  # 开始计时
             # label = ops.Argmax(output_type=ms.int32)(logits)
             # saliency = gradcam(data, label, show=False)
 
@@ -237,6 +237,9 @@ def main():
             # 进行pading
             loss_re, logits_re = train_step2(range_data, label)
             logits_re, part_list = model2(range_data)
+            time_eclapse = time.time() - time_start
+            print('gradcam time:' + str(time_eclapse) + '\n')  # 输出训练时间
+            time_start = time.time()  # 开始计时
             x_pad = Pad_ops(data)
             part_imgs = zeros((args.batch_size * args.topk, 3, 224, 224), mstype.float32)
             for i in range(len(part_list)):
@@ -254,7 +257,8 @@ def main():
                 print(train_str)
                 with open(exp_dir + '/results_train.txt', 'a') as file:
                     file.write(train_str)
-
+            time_eclapse = time.time() - time_start
+            print('gradcam time:' + str(time_eclapse) + '\n')  # 输出训练时间
     def test_loop(model, dataset, loss_fn):
         num_batches = dataset.get_dataset_size()
         model.set_train(False)
@@ -291,7 +295,6 @@ def main():
         # 开始训练
         time_start = time.time()  # 开始计时
         train_loop(model,model2,model3, train_dataset, loss_ce, optimizer)
-
         time_eclapse = time.time() - time_start
         print('train time:' + str(time_eclapse) + '\n')  # 输出训练时间
         # 开始测试

@@ -4,14 +4,17 @@ from mindspore import ops, nn, numpy
 import mindspore as ms
 import mindspore.common.dtype as mstype
 
+
 def l2Norm(input):
     '''
     l2 归一化 已测试，完全正确
     '''
     input_size = input.shape  # 不能用size，要用shape。。
     lp = ops.LpNorm(axis=0, p=2, keep_dims=True)
-    _output = input / (lp(input))  # torch.norm 求范数 dim=-1
-    output = _output.view(input_size)  # 看起来没用
+    output_np = (input / lp(input)).asnumpy()  # torch.norm 求范数 dim=-1 若input为1,则会出现nan
+    output_np = np.nan_to_num(output_np)  # nan变为0
+    output_tensor = ms.Tensor(output_np)
+    output = output_tensor.view(input_size)  # 看起来没用
     return output
 
 
@@ -46,20 +49,21 @@ def get_bbox(data_shape, cammap, rate=0.001):
     # # bs,448*448 归一化
     # mask_norm = (mask - mask_min / x_range)
 
-    reshape = ops.Reshape() # 定义reshape
-    argmax_0 = ops.ArgMaxWithValue(axis=0) # 定义argmax
-    argmin_0 = ops.ArgMinWithValue(axis=0) # 定义argmin
+    reshape = ops.Reshape()  # 定义reshape
+    argmax_0 = ops.ArgMaxWithValue(axis=0)  # 定义argmax
+    argmin_0 = ops.ArgMinWithValue(axis=0)  # 定义argmin
 
-    #sign = ops.Sign() # 得自己定义sign否则会报错明天做@！！@！！@@！cao
+    # sign = ops.Sign() # 得自己定义sign否则会报错明天做@！！@！！@@！cao
     def sign(input):
         input = input.asnumpy()
         output = np.sign(input)
         output = ms.Tensor(output)
         return output
+
     # 两次阶跃函数，使得mask中只有0 和1 .有点意思
     # mask = sign(sign(mask-rate)+1)
-    mask = sign(sign(cammap-rate)+1)
-    mask = reshape(mask,(mask.shape[0], 1, 448, 448))
+    mask = sign(sign(cammap - rate) + 1)
+    mask = reshape(mask, (mask.shape[0], 1, 448, 448))
     xy_list = []
     for k in range(data_shape):
         indices = mask[k].nonzero()
@@ -87,7 +91,34 @@ def get_bbox(data_shape, cammap, rate=0.001):
     return xy_list
 
 
-opResizeLinear = ops.ResizeBilinear((224, 224))
-expand_dims = ops.ExpandDims()
+opReshape = ops.Reshape()
 zeros = ops.Zeros()
+opExpand_dims = ops.ExpandDims()
+opSum = ops.ReduceSum(keep_dims=False)
+relu = ops.ReLU()
 
+
+def get_part_score(logits, targets, args):
+    batch_size = int(targets.shape[0] / args.topk)
+    log_softmax = nn.LogSoftmax()
+    temp = log_softmax(logits)  # (bs*topn,calss_n)
+    score = zeros((batch_size * args.topk, 1), mstype.float32)
+    for i in range(logits.shape[0]):
+        list_item = -temp[i][targets[i]]
+        score[i] = list_item
+    score = opReshape(score, (batch_size, args.topk))
+    return score
+
+
+def get_ranking_loss(score, part_score, args):
+    loss = ms.Tensor(0.)
+    batch_size = score.shape[0]
+    for i in range(args.topk):
+        part_score_i = opExpand_dims(part_score[:, i], 1)
+        targets_p = (part_score > part_score_i)
+        pivot = opExpand_dims(score[:, i], 1)
+        loss_p = (1 - pivot + score) * targets_p
+        loss_p = opSum(relu(loss_p))
+        loss += loss_p
+    loss = loss / batch_size
+    return loss

@@ -122,5 +122,9 @@ class ResNet(nn.Cell):
         return x, feature_low, feature1, feature2
 
 def resnet50(num_classes: int = 1000):
-    "ResNet50模型"
+    """
+    ResNet50模型
+    @param num_classes: 最后一层线性层的类别数量
+    @return: ResNet网络
+    """
     return ResNet(ResidualBlock, [3, 4, 6, 3],num_classes)

@@ -14,7 +14,7 @@ from mindspore.ops import functional as F
 from mindspore.ops import operations as P
 import mindspore.common.dtype as mstype
 
-from models.utils import Navigator, generate_default_anchor_maps, SearchTransfer, filter_checkpoint_parameter_by_list, \
+from models.utils import generate_default_anchor_maps, SearchTransfer, filter_checkpoint_parameter_by_list, \
     ContextBlock, FeatureEnhanceBlock
 from utils import l2Norm
 
@@ -114,7 +114,7 @@ class CPCNN(nn.Cell):
         # self.cls_cat = nn.Dense(2048+2048, args.num_classes)
         # NTS-Net
         self.topK = args.topk
-        self.navigator = Navigator()  # navigator
+        # self.navigator = Navigator()  # navigator
         self.FeatureEnhanceBlock = FeatureEnhanceBlock() # FeatureEnhanceBlock
         _, edge_anchors, _ = generate_default_anchor_maps()  # 生成默认锚点maps
         self.np_edge_anchors = edge_anchors + 224  # 锚点
