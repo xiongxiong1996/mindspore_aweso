@@ -43,7 +43,7 @@ def test_loop(model, dataset, loss_fn, args):
         correct += (pre.argmax(1) == label).asnumpy().sum()
     test_loss /= num_batches
     correct /= total
-    test_str = f"Test: \n Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n"
+    test_str = f"Test: \n Accuracy: {correct}%, Avg loss: {test_loss} \n"
     print(test_str)
     with open(args.resultpath + '/results_test.txt', 'a') as file:
         file.write(test_str)

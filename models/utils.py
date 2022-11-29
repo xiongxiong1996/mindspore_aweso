@@ -284,29 +284,6 @@ def get_bbox(data_shape, cammap, rate=0.001):
     :param rate:  getbox的rate
     :return: xy_list 一个存放了x, y坐标的list。使用时读取list进行切分即可。
     '''
-    # .view(conv_layer.size(0), conv_layer.size(1), 14 * 14)
-    # mean = ops.ReduceMean(keep_dims=True)
-    # expand_dims = ops.ExpandDims()
-    # zeroslike = ops.ZerosLike()
-    # argmax = ops.ArgMaxWithValue(axis=-1, keep_dims=True)
-    # argmin = ops.ArgMinWithValue(axis=-1, keep_dims=True)
-    #
-    # layer_weights = mean(layer_weights, -1)
-    # layer_weights = layer_weights.squeeze(-1)
-    # layer_weights = mean(layer_weights, -1)
-    # # layer_weights = layer_weights.squeeze(-1)
-    # # layer_weights = expand_dims(layer_weights, -1)
-    # conv_layer = reshape(conv_layer, (conv_layer.shape[0], conv_layer.shape[1], conv_layer.shape[2] * conv_layer.shape[3]))
-    # conv_cam = conv_layer * layer_weights
-    # mask = reshape(cammap, (cammap.shape[0], -1))
-    # # bs,1       max-min
-    # _, mask_min = argmin(mask)
-    # _, mask_max = argmax(mask)
-    #
-    # x_range = mask_max - mask_min
-    # # bs,448*448 归一化
-    # mask_norm = (mask - mask_min / x_range)
-
     reshape = ops.Reshape()  # 定义reshape
     argmax_0 = ops.ArgMaxWithValue(axis=0)  # 定义argmax
     argmin_0 = ops.ArgMinWithValue(axis=0)  # 定义argmin
@@ -327,13 +304,6 @@ def get_bbox(data_shape, cammap, rate=0.001):
         indices = mask[k].nonzero()
         indices_numpy = indices.asnumpy()
         if indices_numpy.any():
-            # _, indices_min = argmin_0(indices.astype(ms.float16)) # 出错
-            # _, indices_max = argmax_0(indices.astype(ms.float16)) # 出错
-            # 测试
-            # indices_min = ms.Tensor(np.array([0,0,0]))
-            # indices_max = ms.Tensor(np.array([0, 447, 447]))
-            # min_numpy = indices_min.asnumpy()
-            # max_numpy = indices_max.asnumpy()
             min_numpy = indices_numpy.min(axis=0)
             max_numpy = indices_numpy.max(axis=0)
             y1 = min_numpy[-2]
@@ -418,36 +388,3 @@ def get_parts(args, rpn_score, imgs):
             part = opSqueeze(part)
             part_imgs[args.topk*i+k, :] = part
     return part_imgs, topk_indices_all
-
-def Transfer(input):
-    """
-    特征融合
-    @param input: 需要融合的特征
-    @return: 融合后的特征
-    """
-    # Transfer
-    SearchTransfer1 = SearchTransfer()
-    SearchTransfer2 = SearchTransfer()
-    SearchTransfer3 = SearchTransfer()
-    concat_op_0 = ops.Concat(axis=0)
-
-    time_start = time.time()  # 开始计时
-    part_features_all = input
-    part_features_I0 = part_features_all[:, 0, ...]
-    part_features_I1 = part_features_all[:, 1, ...]
-    part_features_I2 = part_features_all[:, 2, ...]
-    part_features_I3 = part_features_all[:, 3, ...]
-    time_eclapse = time.time() - time_start
-    print('Transfer_pre time:' + str(time_eclapse) + '\n')  # 输出训练时间
-
-    time_start = time.time()  # 开始计时
-    S1 = SearchTransfer1(part_features_I0, part_features_I1)
-    # 跨特征增强
-    S2 = SearchTransfer2(part_features_I0, part_features_I2)
-    # 跨特征增强
-    S3 = SearchTransfer3(part_features_I0, part_features_I3)
-    time_eclapse = time.time() - time_start
-    print('Transfer1-3 time:' + str(time_eclapse) + '\n')  # 输出训练时间
-    # 对part imgs进行特征提取
-    part_features_tran = concat_op_0((part_features_I0, S1, S2, S3))
-    return part_features_tran
