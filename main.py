@@ -7,11 +7,15 @@ import argparse
 import os
 import time
 import mindspore as ms
+from examples.common.resnet import resnet50
 from mindspore import nn, PYNATIVE_MODE
+from mindspore_xai.explainer import GradCAM
+
 from dataset import get_loader
 from models.cpnet import CpNet
 from test_loop import test_loop
 from train_loop import train_loop
+
 
 # 网络基本参数------------------------------------------------------------------------------------------------------------
 parser = argparse.ArgumentParser('MindSpore_Awesome', add_help=False)
@@ -71,6 +75,11 @@ def main():
     test_dataset = get_loader(args, shuffle=False, train=False)
     # 定义网络模型，若存在resume参数，则读取checkpoint的网络参数---------------------------------------------------------------
     model = CpNet(args)
+    for m in model.parameters_and_names():
+        print(m)
+    # net = resnet50(args.num_classes)
+    grad_cam = GradCAM(model, layer="layer4")
+    # saliency = grad_cam(boat_image, targets=3, show=False)
     if args.resume != "":
         param_dict = ms.load_checkpoint(args.resume)
         param_not_load = ms.load_param_into_net(model, param_dict)

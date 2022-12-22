@@ -9,6 +9,15 @@ opExpand_dims = ops.ExpandDims()
 opSum = ops.ReduceSum(keep_dims=False)
 relu = ops.ReLU()
 
+def l2Norm(input):
+    '''
+    l2 归一化 已测试，完全正确
+    '''
+    input_size = input.shape  # 不能用size，要用shape。。
+    lp = ops.LpNorm(axis=0, p=2, keep_dims=True)
+    _output = input / (lp(input))  # torch.norm 求范数 dim=-1
+    output = _output.view(input_size)
+    return output
 
 def get_part_score(logits, targets, args):
     batch_size = int(targets.shape[0] / args.topk)

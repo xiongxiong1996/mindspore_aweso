@@ -8,7 +8,7 @@ from mindspore.ops import stop_gradient
 from mindspore_xai.explainer import GradCAM
 
 # from mindvision.classification import resnet50
-from models import resnet_mindspore, my_resnet
+from models import my_resnet
 from mindspore.ops import functional as F
 from mindspore.ops import operations as P
 import mindspore.common.dtype as mstype
@@ -16,6 +16,8 @@ import mindspore.common.dtype as mstype
 from models.utils import generate_default_anchor_maps, SearchTransfer, filter_checkpoint_parameter_by_list, \
     ContextBlock, FeatureEnhanceBlock, get_parts
 from utils import l2Norm
+
+
 
 
 class CpNet(nn.Cell):
@@ -34,15 +36,16 @@ class CpNet(nn.Cell):
         self.myresnet1 = my_resnet.resnet50(args.num_classes)
         # self.myresnet2 = my_resnet.resnet50(args.num_classes)
         self.myresnet3 = my_resnet.resnet50(args.num_classes)
-        # 加载预训练模型
-        param_dict = load_checkpoint('./resnet50.ckpt')
-        # 获取最后一层参数的名字
-        filter_list = [x.name for x in self.myresnet1.fc.get_parameters()]
-        # 删除预训练模型最后一层的参数
-        filter_checkpoint_parameter_by_list(param_dict, filter_list)
-        load_param_into_net(self.myresnet1, param_dict)
-        # load_param_into_net(self.myresnet2, param_dict)
-        load_param_into_net(self.myresnet3, param_dict)
+
+        # # 加载预训练模型
+        # param_dict = load_checkpoint('/opt/data/private/shaohua/PretrainedModel/resnet50.ckpt')
+        # # 获取最后一层参数的名字
+        # filter_list = [x.name for x in self.myresnet1.fc.get_parameters()]
+        # # 删除预训练模型最后一层的参数
+        # filter_checkpoint_parameter_by_list(param_dict, filter_list)
+        # load_param_into_net(self.myresnet1, param_dict)
+        # # load_param_into_net(self.myresnet2, param_dict)
+        # load_param_into_net(self.myresnet3, param_dict)
 
         self.block = my_resnet.ResidualBlock  # 用于构造resnet的layer4, 用于grandcam
         self.layer4 = my_resnet.make_layer(256 * self.block.expansion, self.block, 512, 3, stride=2)
