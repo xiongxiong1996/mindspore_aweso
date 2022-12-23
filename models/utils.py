@@ -119,6 +119,7 @@ class SearchTransfer(nn.Cell):
         @return:
         '''
         # 进行unfold
+
         part_ref_unfold1 = self.unfold(part_ref)  # K=V 维度 N, C*k*k, Hr*Wr
         part_target_unfold = self.unfold(part_target)  # Q 维度 N, C*k*k, H*W
         # 进行reshape,合并最后两个维度,因为mindspore和pytorch的区别
@@ -138,12 +139,26 @@ class SearchTransfer(nn.Cell):
         # 取最大值 (bs,49) (bs,49)
         max_index, max_value = self.argmax(R_part)  # [N, H*W]  最大值的索引, 最大值
         # (bs,18432,49)
+        # part_ref_rerang = self.flod(part_ref_rerang)
+
         part_ref_rerang_unflod = rerange(part_ref_unfold1, max_index)
-        # 没有flod算子，使用卷积代替，先运行着。  (bs,2048,7,7)
+        # 使用卷积代替flod
         part_ref_rerang = self.opReshape(part_ref_rerang_unflod,
                                          (part_ref_rerang_unflod.shape[0], part_ref_rerang_unflod.shape[1], 7, 7))
         part_ref_rerang = self.flod(part_ref_rerang)
+
+        # # 使用mindspore.ops.col2im 实现flod
+        # # 为了使用ops.col2im 需要讲维度变为  (bs,2048,18432/2048,7*7)
+        # part_ref_rerang_unflod = self.opReshape(part_ref_rerang_unflod,
+        #                                         (bs, c, int(part_ref_rerang_unflod.shape[1] / c), -1))
+        # output_size = Tensor(input_data=[h, w], dtype=mstype.int32)
+        # # part_ref_rerang = ops.col2im(part_ref_rerang, output_size, kernel_size=[3, 3], dilation=[1, 1],
+        # #                              padding_value=[1, 1], stride=[1, 1])
+        # part_ref_rerang = part_ref_rerang_unflod.col2im(output_size, kernel_size=[3, 3], dilation=[1, 1],
+        #                                                 padding_value=[1, 1], stride=[1, 1])
+        # part_ref_rerang = self.opReshape(part_ref_rerang,(bs,c,h,w)) # 很奇怪，不reshape的话concat会报错，说维度不一致。
         # V^和part_features_I1融合
+
         con_res = self.concat_op((part_ref_rerang, part_target))
         # 维度转换 4096->2048 1*1卷积
         part_res = self.conv_trans(con_res)

@@ -30,10 +30,10 @@ class CpNet(nn.Cell):
         param_not_load = ms.load_param_into_net(rensnet, param_dict)
         print(param_not_load)  # 输出没有被加载参数的层，如果都加载完毕则输出为空 []
         # resnetCam
-        resnet_cam = resnetCam.resnet50(num_classes=args.num_classes)
-        param_dict = ms.load_checkpoint('/opt/data/private/shaohua/PretrainedModel/ResNet_79.46.ckpt')
-        param_not_load = ms.load_param_into_net(resnet_cam, param_dict)
-        print(param_not_load)  # 输出没有被加载参数的层，如果都加载完毕则输出为空 []
+        # resnet_cam = resnetCam.resnet50(num_classes=args.num_classes)
+        # param_dict = ms.load_checkpoint('/opt/data/private/shaohua/PretrainedModel/ResNet_79.46.ckpt')
+        # param_not_load = ms.load_param_into_net(resnet_cam, param_dict)
+        # print(param_not_load)  # 输出没有被加载参数的层，如果都加载完毕则输出为空 []
 
         # 参数
         self.args = args
@@ -47,7 +47,7 @@ class CpNet(nn.Cell):
         # resnet 特征提取
         self.myresnet1 = rensnet
         self.myresnet3 = rensnet
-        self.resnet_cam = resnet_cam
+        # self.resnet_cam = resnet_cam
 
 
         self.block = my_resnet.ResidualBlock  # 用于构造resnet的layer4, 用于grandcam
@@ -98,7 +98,11 @@ class CpNet(nn.Cell):
         x3 = self.opConcat_1((x1, x2))  # (bs,2048+ 10*class_n)
         logits3_concat1 = self.classifier3_concat1(x3)
         # GradCam getbox -----------------------------------------------------------------------------------------------
+        time_start = time.time()  # 开始计时
         input_box = x
+        time_eclapse = time.time() - time_start
+        print('gradcam time:' + str(time_eclapse) + '\n')  # 训练一轮时间
+
         # logits_cam = self.resnet_cam(x)
         # grad_cam = GradCAM(self.resnet_cam, layer="layer4")  # 定义grad_cam
         # label = logits_cam.argmax(1)

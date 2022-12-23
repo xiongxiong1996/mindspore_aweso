@@ -25,7 +25,7 @@ parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 8)')
 parser.add_argument('-b', '--batch_size', default=8, type=int, metavar='N', help='mini-batch size (default: 64)')
 parser.add_argument('--resume', default='', type=str, metavar='path', help='path to latest checkpoint (default: none)')
-parser.add_argument('--epochs', default=51, type=int, metavar='N', help='number of total epochs to run')
+parser.add_argument('--epochs', default=11, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--topk', default=4, type=int, metavar='N', help='number of topk')
 parser.add_argument('--lr', '--learning-rate', default=2e-4, type=float, metavar='LR', help='initial learning rate')
 parser.add_argument('--data', default='CUB', type=str, help='choice database')
