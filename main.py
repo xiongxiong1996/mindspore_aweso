@@ -7,12 +7,14 @@ import argparse
 import os
 import time
 import mindspore as ms
-from examples.common.resnet import resnet50
 from mindspore import nn, PYNATIVE_MODE
 from mindspore_xai.explainer import GradCAM
 
+from cam_loop import cam_loop
 from dataset import get_loader
+from models import my_resnet
 from models.cpnet import CpNet
+from models.resnetCam import resnet50
 from test_loop import test_loop
 from train_loop import train_loop
 
@@ -21,9 +23,9 @@ from train_loop import train_loop
 parser = argparse.ArgumentParser('MindSpore_Awesome', add_help=False)
 parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 8)')
-parser.add_argument('-b', '--batch_size', default=12, type=int, metavar='N', help='mini-batch size (default: 64)')
+parser.add_argument('-b', '--batch_size', default=8, type=int, metavar='N', help='mini-batch size (default: 64)')
 parser.add_argument('--resume', default='', type=str, metavar='path', help='path to latest checkpoint (default: none)')
-parser.add_argument('--epochs', default=11, type=int, metavar='N', help='number of total epochs to run')
+parser.add_argument('--epochs', default=51, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--topk', default=4, type=int, metavar='N', help='number of topk')
 parser.add_argument('--lr', '--learning-rate', default=2e-4, type=float, metavar='LR', help='initial learning rate')
 parser.add_argument('--data', default='CUB', type=str, help='choice database')
@@ -72,14 +74,15 @@ def main():
     args.resultpath = exp_dir  # args中加入resultpath
     # 读取数据集---------------------------------------------------------------------------------------------------------
     train_dataset = get_loader(args, shuffle=True, train=True)
+    train_dataset_noshuffle = get_loader(args, shuffle=False, train=True)
     test_dataset = get_loader(args, shuffle=False, train=False)
     # 定义网络模型，若存在resume参数，则读取checkpoint的网络参数---------------------------------------------------------------
     model = CpNet(args)
-    for m in model.parameters_and_names():
-        print(m)
-    # net = resnet50(args.num_classes)
-    grad_cam = GradCAM(model, layer="layer4")
-    # saliency = grad_cam(boat_image, targets=3, show=False)
+    # 加载与训练过的resnet50
+    model_cam = resnet50(args.num_classes) # resnet CAM
+    param_dict = ms.load_checkpoint('/opt/data/private/shaohua/PretrainedModel/ResNet_79.46.ckpt')
+    param_not_load = ms.load_param_into_net(model_cam, param_dict)
+    print(param_not_load)  # 输出没有被加载参数的层，如果都加载完毕则输出为空 []
     if args.resume != "":
         param_dict = ms.load_checkpoint(args.resume)
         param_not_load = ms.load_param_into_net(model, param_dict)
@@ -91,12 +94,15 @@ def main():
     # 定义优化器---------------------------------------------------------------------------------------------------------
     optimizer = nn.Momentum(params=model.trainable_params(), learning_rate=args.lr, momentum=0.9)
     # optimizer = nn.SGD(model.trainable_params(), learning_rate=args.lr)
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!# 定义gradcam----------------------!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    # gradcam = GradCAM(model, layer="layer4")
     # 进行训练及测试------------------------------------------------------------------------------------------------------
     max_acc = 0  # 用于判断当前模型是否最优
     for epoch in range(args.epochs):
         print(f"Epoch {epoch + 1}\n-------------------------------")
+        # # CAM----------------------------------------------------------------------------------------------------------
+        # time_start = time.time()  # 开始计时
+        # xy_list = cam_loop(model_cam, train_dataset_noshuffle, args) # 单次CAM获得位置
+        # time_eclapse = time.time() - time_start
+        # print('CAM one epoch ' + str(time_eclapse) + '\n')  # 训练一轮时间
         # 开始训练-------------------------------------------------------------------------------------------------------
         time_start = time.time()  # 开始计时
         train_loop(model, train_dataset, loss_ce, optimizer, args)  # 单次训练
@@ -105,7 +111,7 @@ def main():
         # 开始测试-------------------------------------------------------------------------------------------------------
         if epoch < 3 or epoch % 5 == 0:
             time_start = time.time()  # 开始计时
-            correct = test_loop(model, test_dataset, loss_ce, args)  # 单词测试
+            correct = test_loop(model, test_dataset, loss_ce, args)  # 单次测试
             time_eclapse = time.time() - time_start
             print('test time:' + str(time_eclapse) + '\n')  # 测试一轮时间
             # 判断是否最优模型，进行存储------------------------------------------------------------------------------------

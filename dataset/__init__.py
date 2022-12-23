@@ -63,5 +63,10 @@ def get_loader(args, shuffle=True, train=True):
         print("error:unknow dataset")
         return
     # 定义batch_size, mindspore的特有写法---------------------------------------------------------------------------------
-    dataset = dataset.batch(batch_size=args.batch_size)
+    if train:
+        dataset = dataset.batch(batch_size=args.batch_size,
+                                drop_remainder=True)  # drop_remainder=True 丢弃最后一组数据。静态网络的话会变大
+    else:
+        dataset = dataset.batch(batch_size=args.batch_size,
+                                drop_remainder=False)  # 测试时，drop为False
     return dataset

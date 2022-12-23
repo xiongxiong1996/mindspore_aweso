@@ -4,25 +4,37 @@ import mindspore.nn as nn
 import mindspore as ms
 import numpy as np
 from mindspore import Tensor, Parameter, ops, load_checkpoint, load_param_into_net
+from mindspore.dataset import vision
 from mindspore.ops import stop_gradient
 from mindspore_xai.explainer import GradCAM
+import mindspore.dataset as ds
 
 # from mindvision.classification import resnet50
-from models import my_resnet
+from models import my_resnet, resnetCam
 from mindspore.ops import functional as F
 from mindspore.ops import operations as P
 import mindspore.common.dtype as mstype
 
 from models.utils import generate_default_anchor_maps, SearchTransfer, filter_checkpoint_parameter_by_list, \
     ContextBlock, FeatureEnhanceBlock, get_parts
-from utils import l2Norm
-
-
+from utils import l2Norm, get_bbox
 
 
 class CpNet(nn.Cell):
     def __init__(self, args):
         super(CpNet, self).__init__()
+        # Resnet 预训练
+        # my_resnet
+        rensnet = my_resnet.resnet50(num_classes=args.num_classes)
+        param_dict = ms.load_checkpoint('/opt/data/private/shaohua/PretrainedModel/ResNet_79.46.ckpt')
+        param_not_load = ms.load_param_into_net(rensnet, param_dict)
+        print(param_not_load)  # 输出没有被加载参数的层，如果都加载完毕则输出为空 []
+        # resnetCam
+        resnet_cam = resnetCam.resnet50(num_classes=args.num_classes)
+        param_dict = ms.load_checkpoint('/opt/data/private/shaohua/PretrainedModel/ResNet_79.46.ckpt')
+        param_not_load = ms.load_param_into_net(resnet_cam, param_dict)
+        print(param_not_load)  # 输出没有被加载参数的层，如果都加载完毕则输出为空 []
+
         # 参数
         self.args = args
         # 常规操作，变换维度，concat等
@@ -33,19 +45,10 @@ class CpNet(nn.Cell):
         self.opStack = ops.Stack(axis=-1)
         self.opSum = ops.ReduceSum(keep_dims=False)
         # resnet 特征提取
-        self.myresnet1 = my_resnet.resnet50(args.num_classes)
-        # self.myresnet2 = my_resnet.resnet50(args.num_classes)
-        self.myresnet3 = my_resnet.resnet50(args.num_classes)
+        self.myresnet1 = rensnet
+        self.myresnet3 = rensnet
+        self.resnet_cam = resnet_cam
 
-        # # 加载预训练模型
-        # param_dict = load_checkpoint('/opt/data/private/shaohua/PretrainedModel/resnet50.ckpt')
-        # # 获取最后一层参数的名字
-        # filter_list = [x.name for x in self.myresnet1.fc.get_parameters()]
-        # # 删除预训练模型最后一层的参数
-        # filter_checkpoint_parameter_by_list(param_dict, filter_list)
-        # load_param_into_net(self.myresnet1, param_dict)
-        # # load_param_into_net(self.myresnet2, param_dict)
-        # load_param_into_net(self.myresnet3, param_dict)
 
         self.block = my_resnet.ResidualBlock  # 用于构造resnet的layer4, 用于grandcam
         self.layer4 = my_resnet.make_layer(256 * self.block.expansion, self.block, 512, 3, stride=2)
@@ -94,8 +97,33 @@ class CpNet(nn.Cell):
         x2 = stop_gradient(x2)  # (bs,10*class_n)
         x3 = self.opConcat_1((x1, x2))  # (bs,2048+ 10*class_n)
         logits3_concat1 = self.classifier3_concat1(x3)
-        # gradcam getbox -----------------------------------------------------------------------------------------------
+        # GradCam getbox -----------------------------------------------------------------------------------------------
         input_box = x
+        # logits_cam = self.resnet_cam(x)
+        # grad_cam = GradCAM(self.resnet_cam, layer="layer4")  # 定义grad_cam
+        # label = logits_cam.argmax(1)
+        # saliency = grad_cam(x, label)
+        # xy_list = get_bbox(self.args.batch_size, saliency, rate=0.2)
+        # # 裁剪box
+        # for i in range(x.shape[0]):
+        #     [x1, x2, y1, y2] = xy_list[i]
+        #     image = x[i]
+        #     # [c,w,h]=image.shape
+        #     # image = self.opReshape(image, (w,h,c))
+        #     image = image.swapaxes(0, 2)
+        #     image = image.swapaxes(0, 1)
+        #     image_np = image.asnumpy()
+        #     x_p = ds.vision.Crop((x1,y1),(x2-x1,y2-y1))(image_np)
+        #     x_p = Tensor(x_p)
+        #     # x_p = self.opReshape(x_p, (c, w, h))
+        #     x_p = x_p.swapaxes(0, 2)
+        #     x_p = x_p.swapaxes(1, 2)
+        #     [c, w, h] = x_p.shape
+        #     x_p = self.opReshape(x_p,(1,c,w,h))
+        #     x_p = ops.interpolate(x_p, None, None, (448, 448), mode="bilinear") # 上采样
+        #     [_, c, w, h] = x_p.shape
+        #     x_p = self.opReshape(x_p, (c, w, h))
+        #     input_box[i,:,:,:] = x_p
         # logits4_box ----------------------------------------------------------------------------------------time：0.16
         # input_box(bs,3,448,448)
         # output_2(bs,200) feature_low_2(bs,1024,28,28) feature1_2(bs,2048,14,14) feature2_2(bs,2048)

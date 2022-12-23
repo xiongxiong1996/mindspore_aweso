@@ -3,8 +3,9 @@ import time
 import numpy as np
 from mindspore import ops
 import mindspore as ms
+from mindspore_xai.explainer import GradCAM
 
-from utils import get_part_score, get_ranking_loss
+from utils import get_part_score, get_ranking_loss, get_bbox
 
 
 def train_loop(model, dataset, loss_fn, optimizer, args):
